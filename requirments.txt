@@ -1,0 +1,9 @@
+PyQt6
+PyQt6-Qt6
+numpy
+#plotly
+#PyQt6-WebEngine
+#pandas
+#matplotlib
+#kaleido
+#scipy
