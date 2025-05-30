@@ -6,7 +6,9 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QGridLayout,
     QGroupBox, QLabel, QHBoxLayout, QFileDialog, QCheckBox, QLineEdit
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
+
+from Library import Controller
 
 NTARGET = 16
 
@@ -21,10 +23,41 @@ class TargetWheelControl(QWidget):
 
         self.button_clicked_id = None
 
+        self.controller = Controller()
+        self.leIP = QLineEdit()
+        self.lePort = QLineEdit()
+        self.bnConnect = QPushButton("Connect")
+        self.bnConnect.clicked.connect(self.Connect_Server)
+
+        self.connectionStatus = QLabel("Not Connect.")
+        self.connectionStatus.setStyleSheet("color : red")
+
         self.init_ui()
+
+        self.Load_program_setting()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.Update_Status)
+        self.timer.start(1000) # 1 sec
+
+    def __del__(self):
+        print("============= Program Ended.")
 
     def init_ui(self):
         main_layout = QGridLayout()
+
+        ########### Server 
+        server_group = QGroupBox("Server")
+        server_layout = QGridLayout()
+        server_group.setLayout(server_layout)
+
+        server_layout.addWidget(QLabel("IP :"), 0, 0)
+        server_layout.addWidget(self.leIP, 0, 1, 1, 5)
+        server_layout.addWidget(QLabel("Port :"), 1, 0)
+        server_layout.addWidget(self.lePort, 1, 1, 1, 3)
+        server_layout.addWidget(self.bnConnect, 1, 4, 1, 2)
+
+        main_layout.addWidget(server_group, 0, 0, 1, 4)
 
         ########### Target group
         target_group = QGroupBox("Target")
@@ -61,15 +94,35 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 4)
         
 
-        main_layout.addWidget(target_group, 0, 0, 3, 1)
+        main_layout.addWidget(target_group, 1, 0, 3, 1)
 
         ########### Status Group
         status_group = QGroupBox("Status")
-        status_layout = QVBoxLayout()
+        status_layout = QGridLayout()
         status_group.setLayout(status_layout)
-        self.status_label = QLabel("Idle")
-        status_layout.addWidget(self.status_label)
-        main_layout.addWidget(status_group, 0, 1)
+
+        row = 0
+        status_layout.addWidget(self.connectionStatus, row, 0, 1, 3)
+
+        row += 1
+        status_layout.addWidget(QLabel("Encoder Pos : "), row, 0)
+        self.Encoderpos = QLineEdit()
+        self.Encoderpos.setReadOnly(True)
+        status_layout.addWidget(self.Encoderpos, row, 1, 1, 2)
+
+        row += 1
+        self.leSendMsg = QLineEdit()
+        self.leSendMsg.returnPressed.connect(self.Send_Message)
+        status_layout.addWidget(QLabel("Send CMD : "), row, 0)
+        status_layout.addWidget(self.leSendMsg, row, 1, 1, 2)
+
+        row += 1
+        self.leGetMsg = QLineEdit()
+        self.leGetMsg.setReadOnly(True)
+        status_layout.addWidget(QLabel("Reply : "), row, 0)
+        status_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
+ 
+        main_layout.addWidget(status_group, 1, 1)
 
         ########### Spinning Control Group
         spin_group = QGroupBox("Spinning Control")
@@ -77,7 +130,7 @@ class TargetWheelControl(QWidget):
         spin_group.setLayout(spin_layout)
         self.spin_label = QLabel("Spin Speed: N/A")
         spin_layout.addWidget(self.spin_label)
-        main_layout.addWidget(spin_group, 1, 1)
+        main_layout.addWidget(spin_group, 2, 1)
 
         ########### Sweeper Control Group
         sweep_group = QGroupBox("Sweeper Control")
@@ -85,10 +138,45 @@ class TargetWheelControl(QWidget):
         sweep_group.setLayout(sweep_layout)
         self.sweep_label = QLabel("Sweep Mode: OFF")
         sweep_layout.addWidget(self.sweep_label)
-        main_layout.addWidget(sweep_group, 2, 1)
+        main_layout.addWidget(sweep_group, 3, 1)
 
         self.setLayout(main_layout)
 
+    def Load_program_setting(self):
+        with open("programSettings.json", "r") as file:
+            data = json.load(file)[0]
+            self.leIP.setText(data["IP"])
+            self.lePort.setText(str(data["Port"]))
+            self.Connect_Server()
+
+            self.fileName = data["target_file"]
+            self.fileNameLineEdit.setText(self.fileName)
+            with open(self.fileName, "r") as file:
+                data = json.load(file)
+                if isinstance(data, list):
+                    for item in data:
+                        idx = item.get("index")
+                        name = item.get("name")
+                        if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
+                            self.target_buttons[idx].setText(name)
+
+    def Save_program_settings(self):
+        pass
+
+    def Connect_Server(self):
+        self.controller.Connect(self.leIP.text(), int(self.lePort.text()))
+        if self.controller.connected:
+            self.connectionStatus.setText("Connected.")
+            self.connectionStatus.setStyleSheet("color : blue")
+        else:
+            self.connectionStatus.setText("Not Connect.")
+            self.connectionStatus.setStyleSheet("color : red")
+
+    def Update_Status(self):
+        self.Encoderpos.setText(self.controller.query("RUe1"))
+
+    def Send_Message(self):
+        self.leGetMsg.setText(self.controller.query(self.leSendMsg.text()))
 
     def Target_picked(self, id):
         print(f"Target : {self.target_names[id]}, id : {id}")
@@ -100,15 +188,13 @@ class TargetWheelControl(QWidget):
         self.button_clicked_id = id
 
 
-
     def Sweep_picked(self, id):
         print(f"Sweep Target : {self.target_names[id]}, id : {id}")
 
-
     def load_targets(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")
-        if filename:
-            with open(filename, "r") as file:
+        self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")
+        if self.fileName:
+            with open(self.fileName, "r") as file:
                 data = json.load(file)
                 if isinstance(data, list):
                     for item in data:
@@ -117,7 +203,7 @@ class TargetWheelControl(QWidget):
                         if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
                             self.target_buttons[idx].setText(name)
 
-        self.fileNameLineEdit.setText(filename)
+        self.fileNameLineEdit.setText(self.fileName)
 
     def save_targets(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Save Target Names", "", "JSON Files (*.json)")
@@ -127,6 +213,7 @@ class TargetWheelControl(QWidget):
                 json.dump(data, file, indent=2)
 
         self.fileNameLineEdit.setText(filename)
+        self.fileName = filename
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

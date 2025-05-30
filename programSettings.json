@@ -1,0 +1,7 @@
+[
+    {
+        "IP": "192.168.203.68",
+        "Port" : 7776,
+        "target_file" : "target_name.json"
+    }
+]
