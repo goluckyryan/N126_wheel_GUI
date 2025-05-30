@@ -18,6 +18,7 @@ class TargetWheelControl(QWidget):
         self.setWindowTitle("Target Wheel Control")
         self.target_buttons = []
         self.target_chkBox = []
+        self.target_pos = []
         self.target_names = [f"Target {i}" for i in range(16)]
         self.fileName = ""
 
@@ -65,26 +66,33 @@ class TargetWheelControl(QWidget):
         target_group.setLayout(target_layout)
 
         target_layout.addWidget(QLabel("Name"), 0, 1, 1, 4)
-        target_layout.addWidget(QLabel("Swp."), 0, 5)
+        target_layout.addWidget(QLabel("Position"), 0, 5,1, 2)
+        target_layout.addWidget(QLabel("Swp."), 0, 7)
 
         # Target Buttons Grid
         for i in range(NTARGET):
             target_layout.addWidget(QLabel(str(i)), 1+i, 0)
+            
             btn = QPushButton(self.target_names[i])
             btn.clicked.connect(lambda _, idx=i: self.Target_picked(idx))
             self.target_buttons.append(btn)
             target_layout.addWidget(btn, 1+i, 1, 1, 4)
+
+            le = QLineEdit(str(int(8192/NTARGET)*i))
+            le.returnPressed.connect(lambda _, idx=i: self.SetPosition(idx))
+            self.target_pos.append(le)
+            target_layout.addWidget(le, 1+i, 5, 1, 2)
             
             chkBox = QCheckBox()
             chkBox.clicked.connect(lambda _, idx=i: self.Sweep_picked(idx))
             self.target_chkBox.append(chkBox)
-            target_layout.addWidget(chkBox, 1+i, 5)
+            target_layout.addWidget(chkBox, 1+i, 7)
 
 
         # Load/Save Buttons
         load_button = QPushButton("Load Targets")
         save_button = QPushButton("Save Targets")
-        load_button.clicked.connect(self.load_targets)
+        load_button.clicked.connect(self.load_targets_click)
         save_button.clicked.connect(self.save_targets)
         target_layout.addWidget(load_button, NTARGET + 2, 1, 1, 2)
         target_layout.addWidget(save_button, NTARGET + 2, 3, 1, 2)
@@ -94,7 +102,7 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 4)
         
 
-        main_layout.addWidget(target_group, 1, 0, 3, 1)
+        main_layout.addWidget(target_group, 1, 0, 3, 2)
 
         ########### Status Group
         status_group = QGroupBox("Status")
@@ -122,15 +130,24 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(QLabel("Reply : "), row, 0)
         status_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
  
-        main_layout.addWidget(status_group, 1, 1)
+        main_layout.addWidget(status_group, 1, 2, 1, 1)
 
         ########### Spinning Control Group
         spin_group = QGroupBox("Spinning Control")
         spin_layout = QVBoxLayout()
         spin_group.setLayout(spin_layout)
+
         self.spin_label = QLabel("Spin Speed: N/A")
         spin_layout.addWidget(self.spin_label)
-        main_layout.addWidget(spin_group, 2, 1)
+        
+        bnSpinStart = QPushButton("Start Spin")
+        spin_layout.addWidget(bnSpinStart)
+        bnSpinStart.clicked.connect(lambda: self.controller.send_message("CJ"))
+        bnSpinStop = QPushButton("Stop Spin")
+        spin_layout.addWidget(bnSpinStop)
+        bnSpinStop.clicked.connect(lambda: self.controller.send_message("SJ"))
+        
+        main_layout.addWidget(spin_group, 2, 2, 1, 1)
 
         ########### Sweeper Control Group
         sweep_group = QGroupBox("Sweeper Control")
@@ -138,7 +155,7 @@ class TargetWheelControl(QWidget):
         sweep_group.setLayout(sweep_layout)
         self.sweep_label = QLabel("Sweep Mode: OFF")
         sweep_layout.addWidget(self.sweep_label)
-        main_layout.addWidget(sweep_group, 3, 1)
+        main_layout.addWidget(sweep_group, 3, 2, 1, 1)
 
         self.setLayout(main_layout)
 
@@ -151,14 +168,7 @@ class TargetWheelControl(QWidget):
 
             self.fileName = data["target_file"]
             self.fileNameLineEdit.setText(self.fileName)
-            with open(self.fileName, "r") as file:
-                data = json.load(file)
-                if isinstance(data, list):
-                    for item in data:
-                        idx = item.get("index")
-                        name = item.get("name")
-                        if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
-                            self.target_buttons[idx].setText(name)
+            self.load_targets()
 
     def Save_program_settings(self):
         pass
@@ -187,12 +197,17 @@ class TargetWheelControl(QWidget):
 
         self.button_clicked_id = id
 
+    def SetPosition(self, id):
+        pass
 
     def Sweep_picked(self, id):
         print(f"Sweep Target : {self.target_names[id]}, id : {id}")
 
-    def load_targets(self):
+    def load_targets_click(self):
         self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")
+        self.load_targets()
+        
+    def load_targets(self):
         if self.fileName:
             with open(self.fileName, "r") as file:
                 data = json.load(file)
@@ -200,15 +215,18 @@ class TargetWheelControl(QWidget):
                     for item in data:
                         idx = item.get("index")
                         name = item.get("name")
+                        pos = str(item.get("position"))
                         if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
                             self.target_buttons[idx].setText(name)
+                            self.target_pos[idx].setText(pos)
+
 
         self.fileNameLineEdit.setText(self.fileName)
 
     def save_targets(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Save Target Names", "", "JSON Files (*.json)")
         if filename:
-            data = [{"index": i, "name": btn.text()} for i, btn in enumerate(self.target_buttons)]
+            data = [{"index": i, "name": btn.text(), "position" : int(self.target_pos[i].text())} for i, btn in enumerate(self.target_buttons)]
             with open(filename, "w") as file:
                 json.dump(data, file, indent=2)
 
