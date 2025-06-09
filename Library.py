@@ -11,9 +11,14 @@ class Controller():
         self.sock = None
         self.connected = False
         self.last_message = None
+
         self.isSpinning = False
-        self.spinSpeed = 0.0
+        self.jogSpeed = 0.0
+        self.jogAccel = 0.0
+        self.jogDeccel = 0.0
+
         self.commandMode = None
+
         self.maxAccel = 0.0
         self.accelRate = 0.0
         self.velocity = 0.0
@@ -31,6 +36,7 @@ class Controller():
 
         # connect to server
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.settimeout(1.0) # 1 sec
         try:
             self.sock.connect((self.IP, self.port))
             self.connected = True
@@ -46,6 +52,17 @@ class Controller():
         time.sleep(0.1)
         # self.seekHome()
         self.getStatus()
+
+    def disconnect(self):
+        self.connected = False
+        try:
+            if self.sock:
+                self.sock.shutdown(socket.SHUT_RDWR)
+                self.sock.close()
+                print("Disconnected from server.")
+        except Exception as e:
+            print("Error while disconnecting:", e)
+        self.sock = None
 
     def seekHome(self):
         if self.connected:
@@ -68,13 +85,15 @@ class Controller():
 
             # jogging parameters
             #check self.spinSpin is number
-            self.spinSpeed = float(self.queryNumber('CS')) # rev/sec
+            self.jogSpeed = float(self.queryNumber('JS')) # rev/sec
+            self.jogAccel = float(self.queryNumber('JA'))
 
             # point to point movement parameters
             self.maxAccel = float(self.queryNumber('AM')) # rev/sec/sec, 0.167 - 5461.167
             self.accelRate = float(self.queryNumber('AC')) # rev/sec/sec
             self.deaccelRate = float(self.queryNumber('DE')) # rev/sec/sec
             self.velocity = float(self.queryNumber('VE')) # rev/sec
+            self.moveDistance = float(self.queryNumber('DI')) # steps
 
             self.position = int(self.queryNumber('RUe1')) # encoder position
 
@@ -118,11 +137,17 @@ class Controller():
             self.send_message(f"VE{velocity}")
             self.velocity = velocity
 
-    def setSpinSpeed(self, speed):
+    def setJogSpeed(self, speed : float):
         if self.connected:
             print(f"Setting spin speed to {speed} rev/sec...")
-            self.send_message(f"CS{speed:.1f}")
-            self.spinSpeed = speed    
+            self.send_message(f"JS{speed:.1f}")
+            self.jogSpeed = speed    
+
+    def setJogAccel(self, accel : float):
+        if self.connected:
+            print(f"Setting spin speed to {accel} rev/sec^2...")
+            self.send_message(f"JA{accel:.3f}")
+            self.jogAccel = accel    
 
     def startSpin(self):
         if self.connected:
@@ -182,23 +207,13 @@ class Controller():
         else:
             return math.nan
 
-    def disconnect(self):
-        """Gracefully disconnect from the server."""
-        self.connected = False
-        try:
-            if self.sock:
-                self.sock.shutdown(socket.SHUT_RDWR)
-                self.sock.close()
-                print("Disconnected from server.")
-        except Exception as e:
-            print("Error while disconnecting:", e)
-        self.sock = None
-
-
-    def send_message(self, message):
+    def send_message_oneShot(self, message):
         if not self.connected:
-            print("Not connected to server")
-            return None
+            print("Not connected to server, attempting to connect...")
+            self.Connect(self.IP, self.port)
+            if not self.connected:
+                print("Failed to reconnect")
+                return None
         
         try:
             # Send message
@@ -218,10 +233,100 @@ class Controller():
         except Exception as e:
             print("Send/Receive error:", e)
             self.connected = False
-            self.last_message = None
-            return None
+            self.disconnect()
+
+    def send_message(self, message):
+        # print("Sending message:", message)
+
+        if not self.connected:
+            print("Not connected to server, attempting to connect...")
+            self.Connect(self.IP, self.port)
+            if not self.connected:
+                print("Failed to reconnect")
+                return None
         
+        try:
+            # Send message
+            binary_prefix = b'\x00\x07'
+            binary_suffix = b'\x0d'
+            full_message = binary_prefix + message.encode('utf-8') + binary_suffix
+            print("->", message)
+            self.sock.sendall(full_message)
+            
+            # Receive response
+            data = self.sock.recv(1024)  # Buffer size of 1024 bytes
+            decoded_message = data[2:-1].decode('utf-8', errors='ignore')
+            print("<-|{}|".format(decoded_message))
+            self.last_message = decoded_message
+            return self.last_message
+                
+        except Exception as e:
+            print("Send/Receive error:", e)
+            self.connected = False
+            print("Attempting to reconnect and resend...")
+            self.Connect(self.IP, self.port)
+            
+            if self.connected:
+                try:
+                    # Retry sending message
+                    full_message = binary_prefix + message.encode('utf-8') + binary_suffix
+                    print("->", message)
+                    self.sock.sendall(full_message)
+                    
+                    # Receive response
+                    data = self.sock.recv(1024)
+                    decoded_message = data[2:-1].decode('utf-8', errors='ignore')
+                    print("<-|{}|".format(decoded_message))
+                    self.last_message = decoded_message
+                    return self.last_message
+                except Exception as retry_e:
+                    print("Retry Send/Receive error:", retry_e)
+                    self.connected = False
+                    self.disconnect()
+                    self.last_message = None
+                    return None
+            else:
+                print("Reconnection failed")
+                self.last_message = None
+                return None
         
+    def test_connection_loss(self):
+        interval = 0.0
+        increment = 0.5
+        max_time = 30.0
+        test_message = "EP"
+        results = []
+
+        print("Starting connection loss test...")
+
+        start_time = time.time()
+        while True:
+            # Wait until the specified interval
+            elapsed_time = time.time() - start_time
+            if elapsed_time < interval:
+                time.sleep(interval - elapsed_time)
+
+            print(f"\nTesting connection for {interval:.1f} seconds")
+            result = self.send_message_oneShot(test_message)
+            
+            if result is None:
+                results.append((interval, False, "Connection lost or failed to send/receive"))
+            else:
+                results.append((interval, True, f"Received: {result}"))
+
+            # Increment interval for next iteration
+            interval += increment
+            start_time = time.time()
+            if interval > max_time:
+                break
+
+        # Print summary
+        print("\nConnection Test Summary:")
+        for interval, success, message in results:
+            status = "Success" if success else "Failed"
+            print(f"Time {interval:.1f}s: {status} - {message}")
+
+        return results
     # def __receive_messages(self):
     #     while self.connected:
     #         try:
@@ -258,6 +363,10 @@ class Controller():
 # if __name__ == "__main__":
 #     controller = Controller()
 #     controller.Connect('192.168.203.68', 7776)
+
+#     controller.test_connection_loss()
+
+#     controller.disconnect()
 
 #     # controller.reset()
 #     # controller.seekHome()

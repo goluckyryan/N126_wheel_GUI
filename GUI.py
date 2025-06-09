@@ -33,24 +33,23 @@ class TargetWheelControl(QWidget):
         self.bnConnect = QPushButton("Connect")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
-        self.connectionStatus = QLabel("Not Connect.")
-        self.connectionStatus.setStyleSheet("color : red")
+        # self.connectionStatus = QLabel("Not Connect.")
+        # self.connectionStatus.setStyleSheet("color : red")
 
         self.init_ui()
 
         self.Load_program_setting()
         self.Connect_Server()
 
+        self.enableSignals = False #disable signals-slots during initialization
+        self.Display_Status()
+        self.enableSignals = True  # Enable signals-slots after initial setup
+
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Status)
-        self.updateTimeInterval = 1000  # milliseconds
-        self.timer.start(self.updateTimeInterval) # 1 sec
-
-        self.enableSignals = False #disable signals-slots during initialization
-
-        self.Display_Status()
-
-        self.enableSignals = True  # Enable signals-slots after initial setup
+        self.updateTimeInterval = 5000  # milliseconds
+        self.timer.start(self.updateTimeInterval) # 1 sec        
+        self.pauseUpdate = False
 
     def closeEvent(self, event: QCloseEvent):
         self.Save_program_settings()
@@ -112,20 +111,20 @@ class TargetWheelControl(QWidget):
 
         self.fileNameLineEdit = QLineEdit("")
         self.fileNameLineEdit.setReadOnly(True)
-        target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 4)
+        target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 7)
         
 
         main_layout.addWidget(target_group, 1, 0, 3, 2)
 
         ########### Status Group
-        status_group = QGroupBox("Status")
+        status_group = QGroupBox("General Control")
         status_layout = QGridLayout()
         status_group.setLayout(status_layout)
 
-        row = 0
-        status_layout.addWidget(self.connectionStatus, row, 0, 1, 3)
+        # row = 0
+        # status_layout.addWidget(self.connectionStatus, row, 0, 1, 3)
 
-        row += 1
+        row = 0
         status_layout.addWidget(QLabel("Encoder Pos. : "), row, 0)
         self.Encoderpos = QLineEdit()
         self.Encoderpos.setReadOnly(True)
@@ -142,6 +141,7 @@ class TargetWheelControl(QWidget):
         self.spAccel = QDoubleSpinBox()
         self.spAccel.setDecimals(3)
         self.spAccel.setSingleStep(0.001)
+        self.spAccel.setRange(0.167, 1000.0)
         self.spAccel.valueChanged.connect(self.SetAccel)
         status_layout.addWidget(self.spAccel, row, 1, 1, 2)
 
@@ -150,6 +150,7 @@ class TargetWheelControl(QWidget):
         self.spSpeed = QDoubleSpinBox()
         self.spSpeed.setDecimals(1)
         self.spSpeed.setSingleStep(0.1)
+        self.spSpeed.setRange(0.0042, 80.0)
         self.spSpeed.valueChanged.connect(self.SetSpeed)
         status_layout.addWidget(self.spSpeed, row, 1, 1, 2)
 
@@ -158,6 +159,7 @@ class TargetWheelControl(QWidget):
         self.spDeccel = QDoubleSpinBox()
         self.spDeccel.setDecimals(3)
         self.spDeccel.setSingleStep(0.001)
+        self.spDeccel.setRange(0.167, 1000.0)
         self.spDeccel.valueChanged.connect(self.SetDeaccel)
         status_layout.addWidget(self.spDeccel, row, 1, 1, 2)
 
@@ -200,22 +202,37 @@ class TargetWheelControl(QWidget):
         self.spSpinSpeed = QDoubleSpinBox()
         self.spSpinSpeed.setDecimals(2)
         self.spSpinSpeed.setSingleStep(0.1)
+        self.spSpinSpeed.setRange(0.0042, 80.0)
         spin_layout.addWidget(QLabel("Spin Speed [r/s] : "), row, 0)
         spin_layout.addWidget(self.spSpinSpeed, row, 1, 1, 2)
         self.spSpinSpeed.valueChanged.connect(self.SetSpinSpeed)
 
         row += 1
-
+        self.spSpinAccel = QDoubleSpinBox()
+        self.spSpinAccel.setDecimals(3)
+        self.spSpinAccel.setSingleStep(0.1)
+        self.spSpinAccel.setRange(0.167, 1000.0)
+        spin_layout.addWidget(QLabel("Spin Accel. [r/s^2] : "), row, 0)
+        spin_layout.addWidget(self.spSpinAccel, row, 1, 1, 2)
+        self.spSpinAccel.valueChanged.connect(self.SetSpinAccel)
 
         row += 1
-        bnSpinStart = QPushButton("Start Spin")
-        spin_layout.addWidget(bnSpinStart, row, 0, 1, 3)
-        bnSpinStart.clicked.connect(lambda: self.controller.startSpin())
+        self.cbDirection = QComboBox()
+        self.cbDirection.addItems(["Clockwise (+)", "Counterclockwise (-)"])
+        spin_layout.addWidget(QLabel("Direction : "), row, 0)
+        spin_layout.addWidget(self.cbDirection, row, 1, 1, 2)
 
         row += 1
-        bnSpinStop = QPushButton("Stop Spin")
-        spin_layout.addWidget(bnSpinStop, row, 0, 1, 3)
-        bnSpinStop.clicked.connect(lambda: self.controller.stopSpin())
+        self.bnSpinStart = QPushButton("Start Spin")
+        spin_layout.addWidget(self.bnSpinStart, row, 0, 1, 3)
+        self.bnSpinStart.clicked.connect(self.StartSpin)
+
+        row += 1
+        self.bnSpinStop = QPushButton("Stop Spin")
+        spin_layout.addWidget(self.bnSpinStop, row, 0, 1, 3)
+        self.bnSpinStop.clicked.connect(self.StopSpin)
+        self.bnSpinStop.setEnabled(False)
+
         
         main_layout.addWidget(spin_group, 2, 2, 1, 1)
 
@@ -248,33 +265,33 @@ class TargetWheelControl(QWidget):
 
     def Connect_Server(self):
         self.controller.Connect(self.leIP.text(), int(self.lePort.text()))
-        if self.controller.connected:
-            self.connectionStatus.setText("Connected.")
-            self.connectionStatus.setStyleSheet("color : blue")
-        else:
-            self.connectionStatus.setText("Not Connect.")
-            self.connectionStatus.setStyleSheet("color : red")
+        # if self.controller.connected:
+        #     self.connectionStatus.setText("Connected.")
+        #     self.connectionStatus.setStyleSheet("color : blue")
+        # else:
+        #     self.connectionStatus.setText("Not Connect.")
+        #     self.connectionStatus.setStyleSheet("color : red")
 
     def Display_Status(self):
         if self.controller.connected:
             self.Encoderpos.setText(f"{self.controller.position}")
-            self.spSpinSpeed.setValue(self.controller.spinSpeed)
             self.spAccel.setValue(self.controller.accelRate)
             self.spDeccel.setValue(self.controller.deaccelRate)
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
             self.spSpeed.setValue(self.controller.velocity)
 
+            self.spSpinSpeed.setValue(self.controller.jogSpeed)
+            self.spSpinAccel.setValue(self.controller.jogAccel)
+            if self.controller.moveDistance >= 0 :
+                self.cbDirection.setCurrentIndex(0)  # Clockwise
+            else:
+                self.cbDirection.setCurrentIndex(1)
+
     def Update_Status(self): # see self.updateTimeInterval
-        if self.controller.isSpinning :
+        if self.pauseUpdate == False:
             self.controller.getPosition()
             self.Encoderpos.setText(f"{self.controller.position}") 
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
-
-    def SetSpinSpeed(self):
-        if self.enableSignals:
-            speed = self.spSpinSpeed.value()
-            self.controller.setSpinSpeed(speed)
-            print(f"Spin Speed set to {speed:.2f} [r/s]")
 
     def SetAccel(self):
         if self.enableSignals:
@@ -298,6 +315,8 @@ class TargetWheelControl(QWidget):
         self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
 
     def Target_picked(self, id):
+        if self.button_clicked_id is not None and self.button_clicked_id == id:
+            return
         print(f"Target : {self.target_names[id]}, id : {id}")
         self.target_buttons[id].setStyleSheet("background-color: green")
 
@@ -309,6 +328,8 @@ class TargetWheelControl(QWidget):
     def SeekHome(self):
         if self.controller.connected:
             self.controller.seekHome()
+
+            self.pauseUpdate = True  
 
             start_time = time.time()
             old_position = self.controller.position
@@ -339,6 +360,11 @@ class TargetWheelControl(QWidget):
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")      
             QApplication.processEvents()  # Process events to update the UI
 
+            self.pauseUpdate = False
+            self.updateTimeInterval = 5000 
+            self.timer.stop()
+            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
+
     def ZeroEncoderPosition(self):
         if self.controller.connected:
             print("Resetting encoder position to 0...")
@@ -348,6 +374,56 @@ class TargetWheelControl(QWidget):
             self.Encoderpos.setText(f"{self.controller.position}") 
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")      
             QApplication.processEvents()  # Process events to update the UI
+
+
+    def SetSpinSpeed(self):
+        if self.enableSignals:
+            speed = self.spSpinSpeed.value()
+            self.controller.setJogSpeed(speed)
+            print(f"Spin Speed set to {speed:.2f} [r/s]")
+
+    def SetSpinAccel(self):
+        if self.enableSignals:
+            accel = self.spSpinAccel.value()
+            self.controller.setJogAccel(accel)
+            print(f"Spin Acceleration set to {accel:.3f} [r/s^2]")
+
+    def StartSpin(self):
+        if self.controller.connected:
+            self.bnSpinStart.setEnabled(False)
+            self.spSpinSpeed.setEnabled(False)
+            self.spSpinAccel.setEnabled(False)
+            self.cbDirection.setEnabled(False)
+            self.bnSpinStop.setEnabled(True)
+
+            self.updateTimeInterval = 1000 
+            self.timer.stop()
+            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
+
+            if self.cbDirection.currentIndex() == 0:
+                print("Starting spin in clockwise direction.")
+                self.controller.send_message("DI100")
+            else:
+                print("Starting spin in counterclockwise direction.")
+                self.controller.send_message("DI-100")
+            self.controller.startSpin()
+
+            self.pauseUpdate = False
+
+    def StopSpin(self):
+        if self.controller.connected:
+            self.bnSpinStart.setEnabled(True)
+            self.spSpinSpeed.setEnabled(True)
+            self.spSpinAccel.setEnabled(True)
+            self.cbDirection.setEnabled(True)
+            self.bnSpinStop.setEnabled(False)
+            self.controller.stopSpin()
+
+            self.pauseUpdate = False
+
+            self.updateTimeInterval = 5000 
+            self.timer.stop()
+            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
 
 
     def SetPosition(self, id):
