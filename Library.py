@@ -69,10 +69,12 @@ class Controller():
     def seekHome(self):
         if self.connected:
             print("Seeking home position...")
-            if self.position > 0 :
-                self.send_message('DI-100')
-            elif self.position < 0 :
+
+            direction = -1* math.sin(2*math.pi * self.position / 8192)
+            if direction >= 0:
                 self.send_message('DI100')
+            else:
+                self.send_message('DI-100') 
 
             self.send_message('SHX0H') #seek home
             
@@ -99,13 +101,17 @@ class Controller():
 
             self.position = int(self.queryNumber('RUe1')) # encoder position
 
-    def getPosition(self):
+    def getPosition(self, outputMsg=True):
         if self.connected:
             # haha = self.query('RUe1')
             # self.position = int(haha) if isinstance(haha, (int)) else None 
             # return self.position
-            self.position = int(self.queryNumber('RUe1'))
-            return self.position
+            haha = self.queryNumber('RUe1', outputMsg)
+            if math.isnan(haha):
+                return math.nan
+            else:
+                self.position = int(self.queryNumber('RUe1'))
+                return self.position
 
     def reset(self):
         if self.connected:
@@ -203,8 +209,8 @@ class Controller():
     def get_last_message(self):
         return self.last_message
 
-    def queryNumber(self, message, timeout=2.0):
-        self.send_message(message)
+    def queryNumber(self, message, outputMsg=True, timeout=2.0):
+        self.send_message(message, outputMsg)
         if self.last_message and '=' in self.last_message:
             temp = self.last_message.split('=')[1].strip()
             # Check if temp is a number
@@ -244,7 +250,7 @@ class Controller():
             self.connected = False
             self.disconnect()
 
-    def send_message(self, message):
+    def send_message(self, message, outputMsg=True):
         # print("Sending message:", message)
 
         if not self.connected:
@@ -259,13 +265,15 @@ class Controller():
             binary_prefix = b'\x00\x07'
             binary_suffix = b'\x0d'
             full_message = binary_prefix + message.encode('utf-8') + binary_suffix
-            print("->", message)
+            if outputMsg :
+               print("->", message)
             self.sock.sendall(full_message)
             
             # Receive response
             data = self.sock.recv(1024)  # Buffer size of 1024 bytes
             decoded_message = data[2:-1].decode('utf-8', errors='ignore')
-            print("<-|{}|".format(decoded_message))
+            if outputMsg :
+                print("<-|{}|".format(decoded_message))
             self.last_message = decoded_message
             return self.last_message
                 

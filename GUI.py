@@ -304,7 +304,7 @@ class TargetWheelControl(QWidget):
 
     def Update_Status(self): # see self.updateTimeInterval
         if self.pauseUpdate == False:
-            self.controller.getPosition()
+            self.controller.getPosition(False) # not display 
             self.Encoderpos.setText(f"{self.controller.position}") 
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
 
@@ -356,13 +356,20 @@ class TargetWheelControl(QWidget):
     def Target_picked(self, id):
         if self.button_clicked_id is not None and self.button_clicked_id == id:
             return
-        print(f"Target : {self.target_names[id]}, id : {id}")
+        target_position = int(self.target_pos[id].text())
+        print(f"Target : {self.target_names[id]}, id : {id}, position : {target_position}")
         self.target_buttons[id].setStyleSheet("background-color: green")
 
         if self.button_clicked_id != None:
             self.target_buttons[self.button_clicked_id].setStyleSheet("")
 
         self.button_clicked_id = id
+
+        diff = target_position - self.controller.position
+        print(f"Moving to target position {target_position} with difference {diff} steps.")
+        mod = diff % 8192
+        print(f"Modulus of difference: {mod}")
+
 
     def SeekHome(self):
         if self.controller.connected:
