@@ -11,9 +11,10 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCloseEvent
 import time
 
-from Library import Controller
+from Library import Controller, STEP_PER_REVOLUTION
 
 NTARGET = 16
+DAEFUL_POS_UPDATE_INTERVAL = 2000  # milliseconds
 
 class TargetWheelControl(QWidget):
     def __init__(self):
@@ -22,6 +23,7 @@ class TargetWheelControl(QWidget):
         self.target_buttons = []
         self.target_chkBox = []
         self.target_pos = []
+        self.target_rev = []
         self.target_names = [f"Target {i}" for i in range(16)]
         self.fileName = None
 
@@ -47,8 +49,8 @@ class TargetWheelControl(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Status)
-        self.updateTimeInterval = 5000  # milliseconds
-        self.timer.start(self.updateTimeInterval) # 1 sec        
+        self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL  # milliseconds
+        self.timer.start(self.updateTimeInterval) 
         self.pauseUpdate = False
 
     def closeEvent(self, event: QCloseEvent):
@@ -79,7 +81,8 @@ class TargetWheelControl(QWidget):
 
         target_layout.addWidget(QLabel("Name"), 0, 1, 1, 4)
         target_layout.addWidget(QLabel("Position"), 0, 5,1, 2)
-        target_layout.addWidget(QLabel("Swp."), 0, 7)
+        target_layout.addWidget(QLabel("Revolution"), 0, 7,1, 2)
+        target_layout.addWidget(QLabel("Swp."), 0, 9)
 
         # Target Buttons Grid
         for i in range(NTARGET):
@@ -90,15 +93,20 @@ class TargetWheelControl(QWidget):
             self.target_buttons.append(btn)
             target_layout.addWidget(btn, 1+i, 1, 1, 4)
 
-            le = QLineEdit(str(int(8192/NTARGET)*i))
-            le.returnPressed.connect(lambda _, idx=i: self.SetPosition(idx))
+            le = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i))
+            le.returnPressed.connect(lambda idx=i: self.SetPosition(idx))
             self.target_pos.append(le)
             target_layout.addWidget(le, 1+i, 5, 1, 2)
+
+            le2 = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i/STEP_PER_REVOLUTION))
+            le2.setReadOnly(True)
+            self.target_rev.append(le2)
+            target_layout.addWidget(le2, 1+i, 7, 1, 1)
             
             chkBox = QCheckBox()
             chkBox.clicked.connect(lambda _, idx=i: self.Sweep_picked(idx))
             self.target_chkBox.append(chkBox)
-            target_layout.addWidget(chkBox, 1+i, 7)
+            target_layout.addWidget(chkBox, 1+i, 9)
 
 
         # Load/Save Buttons
@@ -306,7 +314,7 @@ class TargetWheelControl(QWidget):
         if self.pauseUpdate == False:
             self.controller.getPosition(False) # not display 
             self.Encoderpos.setText(f"{self.controller.position}") 
-            self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
+            self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
     def SetAccel(self):
         if self.enableSignals:
@@ -354,44 +362,63 @@ class TargetWheelControl(QWidget):
         self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
 
     def Target_picked(self, id):
-        if self.button_clicked_id is not None and self.button_clicked_id == id:
-            return
+        #=== change color
+        if  self.button_clicked_id != id:
+            self.target_buttons[id].setStyleSheet("background-color: green")
+            if self.button_clicked_id != None:
+                self.target_buttons[self.button_clicked_id].setStyleSheet("")
+
+            self.button_clicked_id = id
+
+        # === move to target position
         target_position = int(self.target_pos[id].text())
         print(f"Target : {self.target_names[id]}, id : {id}, position : {target_position}")
-        self.target_buttons[id].setStyleSheet("background-color: green")
 
-        if self.button_clicked_id != None:
-            self.target_buttons[self.button_clicked_id].setStyleSheet("")
+        tarAngle = (target_position % STEP_PER_REVOLUTION ) / STEP_PER_REVOLUTION
+        posAngle = (self.controller.position % STEP_PER_REVOLUTION ) / STEP_PER_REVOLUTION
+        diffAngle = tarAngle - posAngle
+        if diffAngle < -0.5:
+            diffAngle += 1.0
+        elif diffAngle > 0.5:
+            diffAngle -= 1.0
+        print(f"Target Angle : {tarAngle:.4f}, Current Angle : {posAngle:.4f}, Difference : {diffAngle:.4f} rev.")
 
-        self.button_clicked_id = id
+        moveDistance = int(diffAngle * STEP_PER_REVOLUTION)  # Convert to steps
+        goto_position = self.controller.position + moveDistance 
+        print(f"Moving to target position: {goto_position} mod {STEP_PER_REVOLUTION} = {goto_position % STEP_PER_REVOLUTION} = {target_position}.")
 
-        diff = target_position - self.controller.position
-        print(f"Moving to target position {target_position} with difference {diff} steps.")
-        mod = diff % 8192
-        print(f"Modulus of difference: {mod}")
+        self.controller.setMoveDistance(moveDistance)
+        self.controller.send_message("FL")  # Send the command to move
 
+        self.CheckPostionStable()        
 
-    def SeekHome(self):
+    def SetPosition(self, id):
+        # print(f"Set Position for Target {id}: {self.target_pos[id].text()}")
+        self.target_rev[id].setText(str(int(self.target_pos[id].text()) / STEP_PER_REVOLUTION))
+
+    def Sweep_picked(self, id):
+        print(f"Sweep Target : {self.target_names[id]}, id : {id}")
+
+    def CheckPostionStable(self, wait_time=10, update_interval=0.2, stable_threshold=5):
         if self.controller.connected:
-            self.controller.seekHome()
-
+    
             self.pauseUpdate = True  
 
             start_time = time.time()
             old_position = self.controller.position
             stableCount  = 0
-            while time.time() - start_time < 10:
-                time.sleep(0.2)  
+            while time.time() - start_time < wait_time:
+                time.sleep(update_interval)  
                 self.controller.getPosition()
                 self.Encoderpos.setText(f"{self.controller.position}") 
-                self.EncoderRev.setText(f"{self.controller.position/8192:.2f} [rev]")
+                self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
                 QApplication.processEvents()  # Process events to update the UI
                 current_position = self.controller.position
                 print(f"Current position: {current_position}, Old position: {old_position} | count : {stableCount}")
                 if abs(current_position - old_position) < 1:
                     stableCount += 1
-                    if stableCount >= 5:
-                        print("Home position found.") 
+                    if stableCount >= stable_threshold:
+                        print("Position Stable.") 
                         break
                 else:
                     stableCount = 0
@@ -399,7 +426,6 @@ class TargetWheelControl(QWidget):
             else:
                 print("Home position not found within 10 seconds. ")
 
-            print("Update postion after seeking home.")
             time.sleep(0.2)  # Wait a bit to ensure the command is processed   
             self.controller.getPosition()
             self.Encoderpos.setText(f"{self.controller.position}") 
@@ -407,9 +433,16 @@ class TargetWheelControl(QWidget):
             QApplication.processEvents()  # Process events to update the UI
 
             self.pauseUpdate = False
-            self.updateTimeInterval = 5000 
+            self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
+            print("End of check position stable.")
+
+    def SeekHome(self):
+        if self.controller.connected:
+            self.controller.seekHome()
+            self.CheckPostionStable()
+            
 
     def ZeroEncoderPosition(self):
         if self.controller.connected:
@@ -470,13 +503,6 @@ class TargetWheelControl(QWidget):
             self.updateTimeInterval = 5000 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
-
-
-    def SetPosition(self, id):
-        pass
-
-    def Sweep_picked(self, id):
-        print(f"Sweep Target : {self.target_names[id]}, id : {id}")
 
     def load_targets_click(self):
         self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")

@@ -3,6 +3,8 @@ import socket
 import time
 import math
 
+STEP_PER_REVOLUTION = 8192  # Number of steps per revolution for the stepper motor
+
 class Controller():
     def __init__(self):
         super().__init__()
@@ -70,7 +72,7 @@ class Controller():
         if self.connected:
             print("Seeking home position...")
 
-            direction = -1* math.sin(2*math.pi * self.position / 8192)
+            direction = -1* math.sin(2*math.pi * self.position / STEP_PER_REVOLUTION)
             if direction >= 0:
                 self.send_message('DI100')
             else:
@@ -110,7 +112,7 @@ class Controller():
             if math.isnan(haha):
                 return math.nan
             else:
-                self.position = int(self.queryNumber('RUe1'))
+                self.position = int(haha)
                 return self.position
 
     def reset(self):
@@ -176,35 +178,35 @@ class Controller():
             self.send_message('SJ')
             self.isSpinning = False
 
-    def gotoPosition(self, position):
-        if self.connected:
-            print(f"Moving to position {position}...")
+    # def gotoPosition(self, position):
+    #     if self.connected:
+    #         print(f"Moving to position {position}...")
 
-            while True: 
-                self.current_position = int(self.queryNumber('RUe1'))  # Get current position
-                print(f"Current position: {self.current_position}")
-                diff = position - self.current_position
-                #estimate the moving time
-                distance = abs(diff) / 8192 # steps to revolutions
-                print(f"Distance to target: {diff:d} steps = {distance:.2f} revolutions")
-                speedUpTime = self.velocity / self.accelRate
-                speedDwTime = self.velocity / self.deaccelRate
-                constSpeedTime = (distance - self.velocity * (speedUpTime + speedDwTime)) / self.velocity if distance > self.velocity * (speedUpTime + speedDwTime) else 0
-                estimatedTime = speedUpTime + constSpeedTime + speedDwTime
-                print(f"Estimated time to reach target: {estimatedTime:.2f} seconds")
+    #         while True: 
+    #             self.current_position = int(self.queryNumber('RUe1'))  # Get current position
+    #             print(f"Current position: {self.current_position}")
+    #             diff = position - self.current_position
+    #             #estimate the moving time
+    #             distance = abs(diff) / 8192 # steps to revolutions
+    #             print(f"Distance to target: {diff:d} steps = {distance:.2f} revolutions")
+    #             speedUpTime = self.velocity / self.accelRate
+    #             speedDwTime = self.velocity / self.deaccelRate
+    #             constSpeedTime = (distance - self.velocity * (speedUpTime + speedDwTime)) / self.velocity if distance > self.velocity * (speedUpTime + speedDwTime) else 0
+    #             estimatedTime = speedUpTime + constSpeedTime + speedDwTime
+    #             print(f"Estimated time to reach target: {estimatedTime:.2f} seconds")
 
-                if abs(diff) < 5:
-                    print("Already at the target position.")
-                    break
-                elif diff > 0:
-                    print(f"Moving forward by {diff} steps.")
-                    self.send_message(f"DI{diff}")
-                else:
-                    print(f"Moving backward by {-diff} steps.")
-                    self.send_message(f"DI{-diff}")
+    #             if abs(diff) < 5:
+    #                 print("Already at the target position.")
+    #                 break
+    #             elif diff > 0:
+    #                 print(f"Moving forward by {diff} steps.")
+    #                 self.send_message(f"DI{diff}")
+    #             else:
+    #                 print(f"Moving backward by {-diff} steps.")
+    #                 self.send_message(f"DI{-diff}")
 
-                self.send_message('FL') 
-                time.sleep(estimatedTime)  # Wait a bit before checking again
+    #             self.send_message('FL') 
+    #             time.sleep(estimatedTime)  # Wait a bit before checking again
 
     def get_last_message(self):
         return self.last_message
@@ -250,7 +252,7 @@ class Controller():
             self.connected = False
             self.disconnect()
 
-    def send_message(self, message, outputMsg=True):
+    def send_message(self, message, outputMsg = True):
         # print("Sending message:", message)
 
         if not self.connected:
@@ -259,7 +261,7 @@ class Controller():
             if not self.connected:
                 print("Failed to reconnect")
                 return None
-        
+
         try:
             # Send message
             binary_prefix = b'\x00\x07'
