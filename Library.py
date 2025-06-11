@@ -23,6 +23,8 @@ class Controller():
         self.accelRate = 0.0
         self.velocity = 0.0
         self.deaccelRate = 0.0
+        self.moveDistance = 0
+
         self.position = 0
 
     def __del__(self):
@@ -136,6 +138,13 @@ class Controller():
             print(f"Setting velocity to {velocity} rev/sec...")
             self.send_message(f"VE{velocity}")
             self.velocity = velocity
+
+    def setMoveDistance(self, distance : int):
+        if self.connected:
+            print(f"Setting move distance to {distance} steps...")
+            self.send_message(f"DI{distance}")
+            self.moveDistance = distance
+            # self.position = int(self.queryNumber('RUe1')) # update position after setting move distance
 
     def setJogSpeed(self, speed : float):
         if self.connected:

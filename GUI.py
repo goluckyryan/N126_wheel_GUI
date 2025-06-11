@@ -164,6 +164,20 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(self.spDeccel, row, 1, 1, 2)
 
         row += 1
+        status_layout.addWidget(QLabel("Move Distance : "), row, 0)
+        self.spMoveDistance = QDoubleSpinBox()
+        self.spMoveDistance.setDecimals(0)
+        self.spMoveDistance.setSingleStep(1)
+        self.spMoveDistance.setRange(-100000, 100000)
+        self.spMoveDistance.valueChanged.connect(self.SetMoveDistance)
+        status_layout.addWidget(self.spMoveDistance, row, 1, 1, 2)
+
+        row += 1
+        self.bnMove = QPushButton("Move")
+        status_layout.addWidget(self.bnMove, row, 0, 1, 3)
+        self.bnMove.clicked.connect(self.moveDistance)
+
+        row += 1
         bnSeekHome = QPushButton("Seek Home")
         status_layout.addWidget(bnSeekHome, row, 0, 1, 3)
         bnSeekHome.clicked.connect(self.SeekHome)
@@ -279,6 +293,7 @@ class TargetWheelControl(QWidget):
             self.spDeccel.setValue(self.controller.deaccelRate)
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
             self.spSpeed.setValue(self.controller.velocity)
+            self.spMoveDistance.setValue(self.controller.moveDistance)
 
             self.spSpinSpeed.setValue(self.controller.jogSpeed)
             self.spSpinAccel.setValue(self.controller.jogAccel)
@@ -310,6 +325,30 @@ class TargetWheelControl(QWidget):
             deaccel = self.spDeccel.value()
             self.controller.setDeaccelRate(deaccel)
             print(f"Deacceleration set to {deaccel:.3f} [r/s^2]")
+
+    def SetMoveDistance(self):
+        if self.enableSignals:
+            distance = self.spMoveDistance.value()
+            self.controller.setMoveDistance(distance)
+            print(f"Move Distance set to {distance:.0f} [steps]")
+
+    def moveDistance(self):
+        if self.controller.connected:
+            distance = self.spMoveDistance.value()
+            if distance != 0:
+                print(f"Moving {distance:.0f} steps.")
+                self.controller.send_message("FL")
+                # self.pauseUpdate = True  
+
+                # start_time = time.time()
+                # old_position = self.controller.position
+                # stableCount  = 0
+                # while time.time() - start_time < 10:
+                #     time.sleep(0.2)  
+                #     self.controller.getPosition()
+                #     self.Encoderpos.setText(f"{self.controller.position}") 
+                #     self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
+                #     QApplication.processEvents()
 
     def Send_Message(self):
         self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
@@ -451,7 +490,12 @@ class TargetWheelControl(QWidget):
                                 self.target_pos[idx].setText(pos)
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 print(f"Error loading targets position: {e}")
+                self.fileName = None
+                self.fileNameLineEdit.setText("")
                 return
+        else:
+            self.fileName = None
+            self.fileNameLineEdit.setText("")
 
         self.fileNameLineEdit.setText(self.fileName)
 
