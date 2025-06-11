@@ -23,7 +23,7 @@ class TargetWheelControl(QWidget):
         self.target_chkBox = []
         self.target_pos = []
         self.target_names = [f"Target {i}" for i in range(16)]
-        self.fileName = ""
+        self.fileName = None
 
         self.button_clicked_id = None
 
@@ -438,17 +438,20 @@ class TargetWheelControl(QWidget):
         
     def load_targets(self):
         if self.fileName:
-            with open(self.fileName, "r") as file:
-                data = json.load(file)
-                if isinstance(data, list):
-                    for item in data:
-                        idx = item.get("index")
-                        name = item.get("name")
-                        pos = str(item.get("position"))
-                        if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
-                            self.target_buttons[idx].setText(name)
-                            self.target_pos[idx].setText(pos)
-
+            try:
+                with open(self.fileName, "r") as file:
+                    data = json.load(file)
+                    if isinstance(data, list):
+                        for item in data:
+                            idx = item.get("index")
+                            name = item.get("name")
+                            pos = str(item.get("position"))
+                            if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
+                                self.target_buttons[idx].setText(name)
+                                self.target_pos[idx].setText(pos)
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                print(f"Error loading targets position: {e}")
+                return
 
         self.fileNameLineEdit.setText(self.fileName)
 
@@ -461,6 +464,7 @@ class TargetWheelControl(QWidget):
 
         self.fileNameLineEdit.setText(filename)
         self.fileName = filename
+        self.Save_program_settings()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
