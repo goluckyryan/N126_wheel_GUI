@@ -29,6 +29,12 @@ class Controller():
 
         self.position = 0
 
+        self.sweepMask = 0x0000
+        self.sweepWidth = 0
+        self.spokeWidth = 0
+        self.sweepSpeed = 0
+        self.sweepCutOff = 0
+
     def __del__(self):
         # Destructor to ensure cleanup
         print("Controller object is being destroyed. Disconnecting...")
@@ -103,6 +109,43 @@ class Controller():
 
             self.position = int(self.queryNumber('RUe1')) # encoder position
 
+            self.sweepMask = int(self.queryNumber('RL3')) # sweep bit
+            self.sweepWidth = int(self.queryNumber('RL6')) 
+            self.spokeWidth = int(self.queryNumber('RL7')) 
+            self.sweepSpeed = int(self.queryNumber('RL8')) 
+            self.sweepCutOff = int(self.queryNumber('RL>')) 
+
+    def setSweepMask(self, mask : int):
+        if self.connected:
+            self.sweepMask = mask
+            self.send_message(f'RU3{mask}')
+    def setSweepWidth(self, width : int):
+        if self.connected:
+            self.sweepWidth = width
+            self.send_message(f'RU6{width}')
+    def setSpokeWidth(self, width : int):
+        if self.connected:
+            self.spokeWidth = width
+            self.send_message(f'RU7{width}')
+    def setSweepSpeed(self, speed : int):
+        if self.connected:
+            self.sweepSpeed = speed
+            self.send_message(f'RU8{speed}')
+    def setSweepCutOff(self, cutoff : int):
+        if self.connected:
+            self.sweepCutOff = cutoff
+            self.send_message(f'RU>{cutoff}')
+    def startSpinSweep(self):
+        if self.connected:
+            print("Starting spin sweep...")
+            self.send_message('QX1')
+            self.isSpinning = True
+    def stopSpinSweep(self):
+        if self.connected:
+            print("Stopping spin sweep...")
+            self.send_message('RL@1')
+            self.isSpinning = False
+
     def getPosition(self, outputMsg=True):
         if self.connected:
             # haha = self.query('RUe1')
@@ -128,25 +171,21 @@ class Controller():
             print(f"Setting max acceleration to {accel} rev/sec^2...")
             self.send_message(f"AM{accel}")
             self.maxAccel = accel
-
     def setAccelRate(self, accel):
         if self.connected:
             print(f"Setting acceleration rate to {accel} rev/sec^2...")
             self.send_message(f"AC{accel}")
             self.accelRate = accel
-    
     def setDeaccelRate(self, deaccel):
         if self.connected:
             print(f"Setting deacceleration rate to {deaccel} rev/sec^2...")
             self.send_message(f"DE{deaccel}")
             self.deaccelRate = deaccel
-    
     def setVelocity(self, velocity):
         if self.connected:
             print(f"Setting velocity to {velocity} rev/sec...")
             self.send_message(f"VE{velocity}")
             self.velocity = velocity
-
     def setMoveDistance(self, distance : int):
         if self.connected:
             print(f"Setting move distance to {distance} steps...")
@@ -159,19 +198,16 @@ class Controller():
             print(f"Setting spin speed to {speed} rev/sec...")
             self.send_message(f"JS{speed:.1f}")
             self.jogSpeed = speed    
-
     def setJogAccel(self, accel : float):
         if self.connected:
             print(f"Setting spin speed to {accel} rev/sec^2...")
             self.send_message(f"JA{accel:.3f}")
             self.jogAccel = accel    
-
     def startSpin(self):
         if self.connected:
             print("Starting spin...")
             self.send_message('CJ')
             self.isSpinning = True
-
     def stopSpin(self):
         if self.connected:
             print("Stopping spin...")

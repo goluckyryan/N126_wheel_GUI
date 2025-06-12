@@ -100,6 +100,7 @@ class TargetWheelControl(QWidget):
 
             le2 = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i/STEP_PER_REVOLUTION))
             le2.setReadOnly(True)
+            le2.setEnabled(False)
             self.target_rev.append(le2)
             target_layout.addWidget(le2, 1+i, 7, 1, 1)
             
@@ -117,12 +118,19 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(load_button, NTARGET + 2, 1, 1, 2)
         target_layout.addWidget(save_button, NTARGET + 2, 3, 1, 2)
 
+        self.message = QLineEdit()
+        self.message.setReadOnly(True)
+        self.message.setEnabled(False)
+        self.message.setText("System message.")
+        target_layout.addWidget(self.message, NTARGET + 2, 5, 1, 3)
+
+
         self.fileNameLineEdit = QLineEdit("")
         self.fileNameLineEdit.setReadOnly(True)
         target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 7)
         
 
-        main_layout.addWidget(target_group, 1, 0, 3, 2)
+        main_layout.addWidget(target_group, 1, 0, 2, 2)
 
         ########### Status Group
         status_group = QGroupBox("General Control")
@@ -207,13 +215,12 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(QLabel("Reply : "), row, 0)
         status_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
 
-
         # row += 1
         # bnReset = QPushButton("Reset")
         # bnReset.clicked.connect(lambda: self.controller.reset())
         # status_layout.addWidget(bnReset, row, 0, 1, 3)
  
-        main_layout.addWidget(status_group, 1, 2, 1, 1)
+        main_layout.addWidget(status_group, 1, 2, 2, 1)
 
         ########### Spinning Control Group
         spin_group = QGroupBox("Spinning Control")
@@ -256,15 +263,60 @@ class TargetWheelControl(QWidget):
         self.bnSpinStop.setEnabled(False)
 
         
-        main_layout.addWidget(spin_group, 2, 2, 1, 1)
+        main_layout.addWidget(spin_group, 1, 3, 1, 1)
 
         ########### Sweeper Control Group
         sweep_group = QGroupBox("Sweeper Control")
-        sweep_layout = QVBoxLayout()
+        sweep_layout = QGridLayout()
         sweep_group.setLayout(sweep_layout)
-        self.sweep_label = QLabel("Sweep Mode: OFF")
-        sweep_layout.addWidget(self.sweep_label)
-        main_layout.addWidget(sweep_group, 3, 2, 1, 1)
+
+        row = 0
+        self.spSweepWidth = QDoubleSpinBox()
+        self.spSweepWidth.setDecimals(0)
+        self.spSweepWidth.setSingleStep(1)
+        self.spSweepWidth.setRange(0, 512)
+        # self.spSweepWidth.valueChanged.connect(self.SetSpinSpeed)
+        sweep_layout.addWidget(QLabel("Pulse Width : "), row, 0)
+        sweep_layout.addWidget(self.spSweepWidth, row, 1, 1, 1)
+
+        row += 1
+        self.spSpokeWidth = QDoubleSpinBox()
+        self.spSpokeWidth.setDecimals(0)
+        self.spSpokeWidth.setSingleStep(1)
+        self.spSpokeWidth.setRange(0, 511)
+        # self.spSweepWidth.valueChanged.connect(self.SetSpinSpeed)
+        sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
+        sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
+ 
+        row += 1
+        self.spSweepSpeed = QDoubleSpinBox()
+        self.spSweepSpeed.setDecimals(0)
+        self.spSweepSpeed.setSingleStep(1)
+        self.spSweepSpeed.setRange(0, 1300)
+        # self.spSweepWidth.valueChanged.connect(self.SetSpinSpeed)
+        sweep_layout.addWidget(QLabel("Speed [rpm] : "), row, 0)
+        sweep_layout.addWidget(self.spSweepSpeed, row, 1, 1, 1)
+ 
+        row += 1
+        self.spSweepCutOff = QDoubleSpinBox()
+        self.spSweepCutOff.setDecimals(0)
+        self.spSweepCutOff.setSingleStep(1)
+        self.spSweepCutOff.setRange(0, 1300)
+        # self.spSweepWidth.valueChanged.connect(self.SetSpinSpeed)
+        sweep_layout.addWidget(QLabel("Cut Off [rpm] : "), row, 0)
+        sweep_layout.addWidget(self.spSweepCutOff, row, 1, 1, 1)
+ 
+        row += 1
+        self.sweepStart = QPushButton("Start sweep and spin")
+        sweep_layout.addWidget(self.sweepStart, row, 0, 1, 2)
+
+        row += 1
+        self.sweepStop = QPushButton("Stop sweep and spin")
+        self.sweepStop.setEnabled(False)
+        sweep_layout.addWidget(self.sweepStop, row, 0, 1, 2)
+
+
+        main_layout.addWidget(sweep_group, 2, 3, 1, 1)
 
         self.setLayout(main_layout)
 
@@ -310,9 +362,29 @@ class TargetWheelControl(QWidget):
             else:
                 self.cbDirection.setCurrentIndex(1)
 
+            #=== check current position and set the corresponding 
+
+            current_Angle = self.controller.position % STEP_PER_REVOLUTION / STEP_PER_REVOLUTION
+            for i, pos in enumerate(self.target_pos):
+                target_Angle = int(pos.text()) % STEP_PER_REVOLUTION / STEP_PER_REVOLUTION
+                if abs(current_Angle - target_Angle) < 0.01:
+                    if self.button_clicked_id != i:
+                        self.target_buttons[i].setStyleSheet("background-color: green")
+                        if self.button_clicked_id is not None:
+                            self.target_buttons[self.button_clicked_id].setStyleSheet("")
+                        self.button_clicked_id = i
+                    break
+
+            #==== sweep parameters
+            self.spSweepWidth.setValue(self.controller.sweepWidth)
+            self.spSpokeWidth.setValue(self.controller.spokeWidth)
+            self.spSweepSpeed.setValue(self.controller.sweepSpeed)
+            self.spSweepCutOff.setValue(self.controller.sweepCutOff)
+            
+
     def Update_Status(self): # see self.updateTimeInterval
         if self.pauseUpdate == False:
-            self.controller.getPosition(False) # not display 
+            self.controller.getPosition(False) 
             self.Encoderpos.setText(f"{self.controller.position}") 
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
@@ -359,8 +431,11 @@ class TargetWheelControl(QWidget):
                 #     QApplication.processEvents()
 
     def Send_Message(self):
+        self.timer.stop()  # Stop the timer to prevent updates during message sending
         self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
-
+        time.sleep(0.1)  # Wait a bit to ensure the command is processed
+        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
+        
     def Target_picked(self, id):
         #=== change color
         if  self.button_clicked_id != id:
@@ -387,7 +462,10 @@ class TargetWheelControl(QWidget):
         goto_position = self.controller.position + moveDistance 
         print(f"Moving to target position: {goto_position} mod {STEP_PER_REVOLUTION} = {goto_position % STEP_PER_REVOLUTION} = {target_position}.")
 
+        self.message.setText(f"Moving to absolute position: {goto_position}.")
+
         self.controller.setMoveDistance(moveDistance)
+        self.spMoveDistance.setValue(moveDistance)
         self.controller.send_message("FL")  # Send the command to move
 
         self.CheckPostionStable()        
@@ -397,7 +475,19 @@ class TargetWheelControl(QWidget):
         self.target_rev[id].setText(str(int(self.target_pos[id].text()) / STEP_PER_REVOLUTION))
 
     def Sweep_picked(self, id):
-        print(f"Sweep Target : {self.target_names[id]}, id : {id}")
+        self.timer.stop()  # Stop the timer to prevent updates during sweep selection
+        print("Old Sweep Mask: %s" % bin(self.controller.sweepMask))
+        if self.target_chkBox[id].isChecked():
+            print(f"Sweep Target : {self.target_names[id]}, id : {id}")
+            self.controller.sweepMask += (1 << id)  # Set the bit for the target
+        else:
+            print(f"Uncheck Sweep Target : {self.target_names[id]}, id : {id}")
+            self.controller.sweepMask -= (1 << id)  # Unset the bit for the target
+
+        print("New Sweep Mask: %s" % bin(self.controller.sweepMask))
+        self.controller.setSweepMask(self.controller.sweepMask)
+        time.sleep(0.1)  # Wait a bit to ensure the command is processed
+        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
 
     def CheckPostionStable(self, wait_time=10, update_interval=0.2, stable_threshold=5):
         if self.controller.connected:
@@ -453,7 +543,6 @@ class TargetWheelControl(QWidget):
             self.Encoderpos.setText(f"{self.controller.position}") 
             self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")      
             QApplication.processEvents()  # Process events to update the UI
-
 
     def SetSpinSpeed(self):
         if self.enableSignals:

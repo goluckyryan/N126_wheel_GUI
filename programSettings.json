@@ -2,6 +2,6 @@
   {
     "IP": "192.168.203.68",
     "Port": 7776,
-    "target_file": null
+    "target_file": "/home/ryan/N126_wheel_GUI/target_name.json"
   }
 ]
