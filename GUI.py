@@ -22,6 +22,7 @@ class CustomButton(QPushButton):
         super().__init__(text, parent)
         self.isChangeNameMode = False
         self.name = text
+        # self.setStyleSheet("background-color : #EDA6E5")
     
     def mousePressEvent(self, event):
         # Check for Ctrl + Left-click
@@ -48,6 +49,7 @@ class TargetWheelControl(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Target Wheel Control")
+        self.setStyleSheet("background-color : #FFD7FB")
         self.target_buttons = []
         self.target_chkBox = []
         self.target_pos = []
