@@ -93,48 +93,48 @@ class Controller():
             
     def getStatus(self):
         if self.connected:
-            self.commandMode = self.queryNumber('CM')
+            self.commandMode = self.queryNumber('CM', False)
 
             # jogging parameters
             #check self.spinSpin is number
-            self.jogSpeed = float(self.queryNumber('JS')) # rev/sec
-            self.jogAccel = float(self.queryNumber('JA'))
+            self.jogSpeed = float(self.queryNumber('JS',False)) # rev/sec
+            self.jogAccel = float(self.queryNumber('JA',False))
 
             # point to point movement parameters
-            self.maxAccel = float(self.queryNumber('AM')) # rev/sec/sec, 0.167 - 5461.167
-            self.accelRate = float(self.queryNumber('AC')) # rev/sec/sec
-            self.deaccelRate = float(self.queryNumber('DE')) # rev/sec/sec
-            self.velocity = float(self.queryNumber('VE')) # rev/sec
-            self.moveDistance = float(self.queryNumber('DI')) # steps
+            self.maxAccel = float(self.queryNumber('AM',False)) # rev/sec/sec, 0.167 - 5461.167
+            self.accelRate = float(self.queryNumber('AC',False)) # rev/sec/sec
+            self.deaccelRate = float(self.queryNumber('DE',False)) # rev/sec/sec
+            self.velocity = float(self.queryNumber('VE',False)) # rev/sec
+            self.moveDistance = float(self.queryNumber('DI',False)) # steps
 
-            self.position = int(self.queryNumber('RUe1')) # encoder position
+            self.sweepMask = int(self.queryNumber('RL3',False)) # sweep bit
+            self.sweepWidth = int(self.queryNumber('RL6',False)) 
+            self.spokeWidth = int(self.queryNumber('RL7',False)) 
+            self.sweepSpeed = int(self.queryNumber('RL8',False)) 
+            self.sweepCutOff = int(self.queryNumber('RL>',False))
 
-            self.sweepMask = int(self.queryNumber('RL3')) # sweep bit
-            self.sweepWidth = int(self.queryNumber('RL6')) 
-            self.spokeWidth = int(self.queryNumber('RL7')) 
-            self.sweepSpeed = int(self.queryNumber('RL8')) 
-            self.sweepCutOff = int(self.queryNumber('RL>')) 
+            self.position = int(self.queryNumber('RUe1',False)) # encoder position
 
     def setSweepMask(self, mask : int):
         if self.connected:
             self.sweepMask = mask
-            self.send_message(f'RU3{mask}')
+            self.send_message(f'RL3{mask}')
     def setSweepWidth(self, width : int):
         if self.connected:
             self.sweepWidth = width
-            self.send_message(f'RU6{width}')
+            self.send_message(f'RL6{int(width):d}')
     def setSpokeWidth(self, width : int):
         if self.connected:
             self.spokeWidth = width
-            self.send_message(f'RU7{width}')
+            self.send_message(f'RL7{int(width):d}')
     def setSweepSpeed(self, speed : int):
         if self.connected:
             self.sweepSpeed = speed
-            self.send_message(f'RU8{speed}')
+            self.send_message(f'RL8{int(speed):d}')
     def setSweepCutOff(self, cutoff : int):
         if self.connected:
             self.sweepCutOff = cutoff
-            self.send_message(f'RU>{cutoff}')
+            self.send_message(f'RL>{int(cutoff):d}')
     def startSpinSweep(self):
         if self.connected:
             print("Starting spin sweep...")
@@ -144,6 +144,8 @@ class Controller():
         if self.connected:
             print("Stopping spin sweep...")
             self.send_message('RL@1')
+            time.sleep(0.1)
+            self.send_message('SK')
             self.isSpinning = False
 
     def getPosition(self, outputMsg=True):
@@ -169,27 +171,27 @@ class Controller():
     def setMaxAccel(self, accel):
         if self.connected:
             print(f"Setting max acceleration to {accel} rev/sec^2...")
-            self.send_message(f"AM{accel}")
+            self.send_message(f"AM{accel:.3f}")
             self.maxAccel = accel
     def setAccelRate(self, accel):
         if self.connected:
             print(f"Setting acceleration rate to {accel} rev/sec^2...")
-            self.send_message(f"AC{accel}")
+            self.send_message(f"AC{accel:.3f}")
             self.accelRate = accel
     def setDeaccelRate(self, deaccel):
         if self.connected:
             print(f"Setting deacceleration rate to {deaccel} rev/sec^2...")
-            self.send_message(f"DE{deaccel}")
+            self.send_message(f"DE{deaccel:.3f}")
             self.deaccelRate = deaccel
     def setVelocity(self, velocity):
         if self.connected:
             print(f"Setting velocity to {velocity} rev/sec...")
-            self.send_message(f"VE{velocity}")
+            self.send_message(f"VE{velocity:.1f}")
             self.velocity = velocity
     def setMoveDistance(self, distance : int):
         if self.connected:
             print(f"Setting move distance to {distance} steps...")
-            self.send_message(f"DI{distance}")
+            self.send_message(f"DI{distance:.0f}")
             self.moveDistance = distance
             # self.position = int(self.queryNumber('RUe1')) # update position after setting move distance
 
