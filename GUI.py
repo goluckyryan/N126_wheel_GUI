@@ -177,9 +177,15 @@ class TargetWheelControl(QWidget):
 
         row = 0
         status_layout.addWidget(QLabel("Encoder Pos. : "), row, 0)
-        self.Encoderpos = QLineEdit()
-        self.Encoderpos.setReadOnly(True)
-        status_layout.addWidget(self.Encoderpos, row, 1, 1, 2)
+        self.EncoderPos = QLineEdit()
+        self.EncoderPos.setReadOnly(True)
+        status_layout.addWidget(self.EncoderPos, row, 1, 1, 2)
+
+        row += 1
+        status_layout.addWidget(QLabel("Encoder rel. pos. : "), row, 0)
+        self.EncoderPosRel = QLineEdit()
+        self.EncoderPosRel.setReadOnly(True)
+        status_layout.addWidget(self.EncoderPosRel, row, 1, 1, 2)
 
         row += 1
         status_layout.addWidget(QLabel("Encoder Rev. : "), row, 0)
@@ -406,10 +412,11 @@ class TargetWheelControl(QWidget):
     def Display_Status(self):
         if self.controller.connected:
 
-            self.Encoderpos.setText(f"{self.controller.position}")
+            self.EncoderPos.setText(f"{self.controller.position}")
+            self.EncoderPosRel.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
+            self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
             self.spAccel.setValue(self.controller.accelRate)
             self.spDeccel.setValue(self.controller.deaccelRate)
-            self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")
             self.spSpeed.setValue(self.controller.velocity)
             self.spMoveDistance.setValue(self.controller.moveDistance)
 
@@ -441,7 +448,8 @@ class TargetWheelControl(QWidget):
     def Update_Position(self): # see self.updateTimeInterval
         if self.pauseUpdate == False:
             self.controller.getPosition(False) 
-            self.Encoderpos.setText(f"{self.controller.position}") 
+            self.EncoderPos.setText(f"{self.controller.position}") 
+            self.EncoderPosRel.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
     def SetAccel(self):
@@ -607,7 +615,8 @@ class TargetWheelControl(QWidget):
             while time.time() - start_time < wait_time:
                 time.sleep(update_interval)  
                 self.controller.getPosition()
-                self.Encoderpos.setText(f"{self.controller.position}") 
+                self.EncoderPos.setText(f"{self.controller.position}") 
+                self.EncoderPosRel.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
                 self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
                 QApplication.processEvents()  # Process events to update the UI
                 current_position = self.controller.position
@@ -625,8 +634,9 @@ class TargetWheelControl(QWidget):
 
             time.sleep(0.2)  # Wait a bit to ensure the command is processed   
             self.controller.getPosition()
-            self.Encoderpos.setText(f"{self.controller.position}") 
-            self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")      
+            self.EncoderPos.setText(f"{self.controller.position}") 
+            self.EncoderPosRel.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
+            self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")      
             QApplication.processEvents()  # Process events to update the UI
 
             self.pauseUpdate = False
@@ -647,8 +657,9 @@ class TargetWheelControl(QWidget):
             self.controller.setEncoderPosition(0)  # Set the encoder position to 0
             time.sleep(0.1)  
             self.controller.getPosition()
-            self.Encoderpos.setText(f"{self.controller.position}") 
-            self.EncoderRev.setText(f"{self.controller.position/8912:.2f} [rev]")      
+            self.EncoderPos.setText(f"{self.controller.position}") 
+            self.EncoderPosRel.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
+            self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
             QApplication.processEvents()  # Process events to update the UI
 
     def SetSpinSpeed(self):
