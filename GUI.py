@@ -308,7 +308,7 @@ class TargetWheelControl(QWidget):
 
  
         ########### Sweeper Control Group
-        sweep_group = QGroupBox("Sweeper Control")
+        sweep_group = QGroupBox("Veto Sweeper Control")
         sweep_layout = QGridLayout()
         sweep_group.setLayout(sweep_layout)
 
@@ -318,7 +318,7 @@ class TargetWheelControl(QWidget):
         self.spSweepWidth.setSingleStep(1)
         self.spSweepWidth.setRange(0, 512)
         self.spSweepWidth.valueChanged.connect(self.SetSweepWidth)
-        sweep_layout.addWidget(QLabel("Pulse Width : "), row, 0)
+        sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
         sweep_layout.addWidget(self.spSweepWidth, row, 1, 1, 1)
 
         row += 1
@@ -327,7 +327,7 @@ class TargetWheelControl(QWidget):
         self.spSpokeWidth.setSingleStep(1)
         self.spSpokeWidth.setRange(0, 511)
         self.spSpokeWidth.valueChanged.connect(self.SetSpokeWidth)
-        sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
+        sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
         sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
  
         row += 1
@@ -561,10 +561,14 @@ class TargetWheelControl(QWidget):
             self.controller.setSpokeWidth(self.spSpokeWidth.value())
     def SetSweepSpeed(self):
         if self.enableSignals:
-            self.controller.setSweepSpeed(self.spSweepSpeed.value()*4)
+            haha = int(self.spSweepSpeed.value() * 4)
+            self.spSweepSpeed.setValue(haha/4)
+            self.controller.setSweepSpeed(haha)
     def SetSweepCutOff(self):
         if self.enableSignals:
-            self.controller.setSweepCutOff(self.spSweepCutOff.value()*4)
+            haha = int(self.spSweepCutOff.value() * 4)
+            self.spSweepCutOff.setValue(haha/4)
+            self.controller.setSweepCutOff(haha)
 
     def StartSweep(self):
         if self.controller.connected:
