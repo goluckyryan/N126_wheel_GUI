@@ -119,6 +119,7 @@ class Controller():
         if self.connected:
             self.sweepMask = mask
             self.send_message(f'RL3{mask}')
+            # print(f'Sweep mask set to {mask:04X}')
     def setSweepWidth(self, width : int):
         if self.connected:
             self.sweepWidth = width

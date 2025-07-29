@@ -62,7 +62,7 @@ class TargetWheelControl(QWidget):
         self.controller = Controller()
         self.leIP = QLineEdit()
         self.lePort = QLineEdit()
-        self.bnConnect = QPushButton("Connect / Refresh")
+        self.bnConnect = QPushButton("Connect & Refresh")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
         # self.connectionStatus = QLabel("Not Connect.")
@@ -571,16 +571,15 @@ class TargetWheelControl(QWidget):
             self.chkAll.setText("Disable All")
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(True)
-            self.controller.sweepMask = (1 << 16) - 1  # Set all bits to 1
-            self.controller.setSweepMask(self.controller.sweepMask)
+            tempMask = (1 << 16) - 1  # Set all bits to 1
+            self.controller.setSweepMask(tempMask)
         elif self.chkAll.styleSheet() == "background-color: green":
             print("Uncheck all targets from sweep.")
             self.chkAll.setStyleSheet("")
             self.chkAll.setText("Eanble All")
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(False)
-            self.controller.sweepMask = 0  # Set all bits to 0
-            self.controller.setSweepMask(self.controller.sweepMask)
+            self.controller.setSweepMask(0)
         self.enableSignals = True  # Enable signals-slots after sweep selection 
         time.sleep(0.1)  # Wait a bit to ensure the command is processed
         self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
@@ -614,12 +613,10 @@ class TargetWheelControl(QWidget):
                 self.target_pos[i].setEnabled(False)
 
             self.spin_group.setEnabled(False)
+            self.spSweepSpeed.setEnabled(False)
 
-            #software saftguard
-            tempMask = self.controller.sweepMask
-            self.controller.setSweepMask(0)
+
             self.controller.startSpinSweep()
-            self.controller.setSweepMask(tempMask)
 
             self.updateTimeInterval = 500 
             self.timer.stop()
@@ -636,6 +633,7 @@ class TargetWheelControl(QWidget):
                 self.target_pos[i].setEnabled(True)
 
             self.spin_group.setEnabled(True)
+            self.spSweepSpeed.setEnabled(True)
 
             self.controller.stopSpinSweep()
 
