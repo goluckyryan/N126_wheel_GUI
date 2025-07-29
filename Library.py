@@ -262,8 +262,40 @@ class Controller():
             return temp
         else:
             return math.nan
+        
+    def checkValidMessage(self, message):
+        validReadMassages = [ # message that use to read or command
+            'CM', 'JS', 'JA', 'AM', 'AC', 'DE', 'VE', 'DI', 
+            'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS'
+            'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP'
+            'RU31', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU>1'
+        ]
+        validWriteMessages = [ # message that use to write values
+            'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP'
+            'RL3', 'RL6', 'RL7', 'RL8', 'RL>', 'CS'
+        ]
+
+        for valid_message in validReadMassages:
+            if message == valid_message:
+                return True
+            
+        for valid_message in validWriteMessages:
+            if message.startswith(valid_message):
+                #check the rest of the message is a number
+                try:
+                    value = message[len(valid_message):]
+                    if value.isdigit() or (value.startswith('-') and value[1:].isdigit()) or (value.replace('.', '', 1).isdigit() and value.count('.') < 2):
+                        return True
+                except Exception as e:
+                    return False
+            
+        return False
+
 
     def send_message_oneShot(self, message):
+        if not self.checkValidMessage(message):
+            return None
+
         if not self.connected:
             print("Not connected to server, attempting to connect...")
             self.Connect(self.IP, self.port)
@@ -292,6 +324,8 @@ class Controller():
             self.disconnect()
 
     def send_message(self, message, outputMsg = True):
+        if not self.checkValidMessage(message):
+            return "invalid message"
         # print("Sending message:", message)
 
         if not self.connected:
@@ -299,7 +333,7 @@ class Controller():
             self.Connect(self.IP, self.port)
             if not self.connected:
                 print("Failed to reconnect")
-                return None
+                return "Failed to connect"
 
         try:
             # Send message

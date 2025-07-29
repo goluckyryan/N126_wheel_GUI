@@ -493,6 +493,7 @@ class TargetWheelControl(QWidget):
     def Send_Message(self):
         self.timer.stop()  # Stop the timer to prevent updates during message sending
         self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
+        self.leSendMsg.selectAll()
         time.sleep(0.1)  # Wait a bit to ensure the command is processed
         self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
 
