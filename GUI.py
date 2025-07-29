@@ -49,7 +49,7 @@ class TargetWheelControl(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Target Wheel Control")
-        self.setStyleSheet("background-color : #FFD7FB")
+        # self.setStyleSheet("background-color : #FFD7FB")
         self.target_buttons = []
         self.target_chkBox = []
         self.target_pos = []
@@ -62,7 +62,7 @@ class TargetWheelControl(QWidget):
         self.controller = Controller()
         self.leIP = QLineEdit()
         self.lePort = QLineEdit()
-        self.bnConnect = QPushButton("Connect")
+        self.bnConnect = QPushButton("Connect / Refresh")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
         # self.connectionStatus = QLabel("Not Connect.")
@@ -72,10 +72,6 @@ class TargetWheelControl(QWidget):
 
         self.Load_program_setting()
         self.Connect_Server()
-
-        self.enableSignals = False #disable signals-slots during initialization
-        self.Display_Status()
-        self.enableSignals = True  # Enable signals-slots after initial setup
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Position)
@@ -106,7 +102,7 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(QLabel("Name"), 0, 1, 1, 4)
         target_layout.addWidget(QLabel("Position"), 0, 5,1, 2)
         target_layout.addWidget(QLabel("Revolution"), 0, 7,1, 2)
-        target_layout.addWidget(QLabel("Swp."), 0, 9)
+        target_layout.addWidget(QLabel("En."), 0, 9)
 
         # Target Buttons Grid
         for i in range(NTARGET):
@@ -145,15 +141,17 @@ class TargetWheelControl(QWidget):
         self.message = QLineEdit()
         self.message.setReadOnly(True)
         self.message.setEnabled(False)
-        self.message.setText("go to absolute position...")
-        target_layout.addWidget(self.message, NTARGET + 2, 5, 1, 3)
+        self.message.setText("go to abs. position...")
+        target_layout.addWidget(self.message, NTARGET + 2, 5, 1, 2)
 
+        self.chkAll = QPushButton("Enable All")
+        target_layout.addWidget(self.chkAll, NTARGET + 2, 7, 1, 3)
+        self.chkAll.clicked.connect(self.setAllSweepTargets)
 
         self.fileNameLineEdit = QLineEdit("")
         self.fileNameLineEdit.setReadOnly(True)
         target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 7)
         
-
 
         ########### Server 
         server_group = QGroupBox("Server")
@@ -389,6 +387,9 @@ class TargetWheelControl(QWidget):
 
     def Connect_Server(self):
         self.controller.Connect(self.leIP.text(), int(self.lePort.text()))
+        self.enableSignals = False  # Disable signals-slots during connection
+        self.Display_Status()
+        self.enableSignals = True  # Enable signals-slots after connection
 
     def UpdateButtonsColor(self, tolerance=0.01):
         current_Angle = self.controller.position % STEP_PER_REVOLUTION / STEP_PER_REVOLUTION
@@ -411,6 +412,7 @@ class TargetWheelControl(QWidget):
 
     def Display_Status(self):
         if self.controller.connected:
+            print("Update Status.")
 
             self.EncoderPos.setText(f"{self.controller.position}")
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
@@ -443,6 +445,9 @@ class TargetWheelControl(QWidget):
                 bitPos = i - 1 if i > 0 else 15
                 if self.controller.sweepMask & (1 << bitPos):
                     self.target_chkBox[i].setChecked(True)
+            if self.controller.sweepMask == (1 << 16) - 1:
+                self.chkAll.setStyleSheet("background-color: green")
+                self.chkAll.setText("Disable All")
             
 
     def Update_Position(self): # see self.updateTimeInterval
@@ -549,9 +554,37 @@ class TargetWheelControl(QWidget):
             self.controller.sweepMask &= ~(1 << bitPos)  # Unset the bit for the target
 
         print("New Sweep Mask: %s" % bin(self.controller.sweepMask))
+
+        if self.chkAll.styleSheet() == "background-color: green":
+            self.chkAll.setStyleSheet("")  # Uncheck the "All" button if it was checked
+            self.chkAll.setText("Enable All")
+
         self.controller.setSweepMask(self.controller.sweepMask)
         time.sleep(0.1)  # Wait a bit to ensure the command is processed
         self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
+
+    def setAllSweepTargets(self):
+        self.timer.stop()
+        self.enableSignals = False  # Disable signals-slots during sweep selection
+        if self.chkAll.styleSheet() == "":
+            self.chkAll.setStyleSheet("background-color: green")
+            self.chkAll.setText("Disable All")
+            for i in range(NTARGET):
+                self.target_chkBox[i].setChecked(True)
+            self.controller.sweepMask = (1 << 16) - 1  # Set all bits to 1
+            self.controller.setSweepMask(self.controller.sweepMask)
+        elif self.chkAll.styleSheet() == "background-color: green":
+            print("Uncheck all targets from sweep.")
+            self.chkAll.setStyleSheet("")
+            self.chkAll.setText("Eanble All")
+            for i in range(NTARGET):
+                self.target_chkBox[i].setChecked(False)
+            self.controller.sweepMask = 0  # Set all bits to 0
+            self.controller.setSweepMask(self.controller.sweepMask)
+        self.enableSignals = True  # Enable signals-slots after sweep selection 
+        time.sleep(0.1)  # Wait a bit to ensure the command is processed
+        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
+
 
     def SetSweepWidth(self):
         if self.enableSignals:
@@ -582,7 +615,11 @@ class TargetWheelControl(QWidget):
 
             self.spin_group.setEnabled(False)
 
+            #software saftguard
+            tempMask = self.controller.sweepMask
+            self.controller.setSweepMask(0)
             self.controller.startSpinSweep()
+            self.controller.setSweepMask(tempMask)
 
             self.updateTimeInterval = 500 
             self.timer.stop()
