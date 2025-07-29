@@ -542,7 +542,7 @@ class TargetWheelControl(QWidget):
 
     def Sweep_picked(self, id):
         self.timer.stop()  # Stop the timer to prevent updates during sweep selection
-        print("Old Sweep Mask: %s" % bin(self.controller.sweepMask))
+        print("Old Sweep Mask: %s | 0x%04X" % (bin(self.controller.sweepMask), self.controller.sweepMask))
         bitPos = id - 1
         if id == 0 :
             bitPos = 15  # Special case for target 1, which is the last bit in the mask
@@ -553,7 +553,7 @@ class TargetWheelControl(QWidget):
             print(f"Uncheck Sweep Target : {self.target_names[id]}, id : {id}")
             self.controller.sweepMask &= ~(1 << bitPos)  # Unset the bit for the target
 
-        print("New Sweep Mask: %s" % bin(self.controller.sweepMask))
+        print("New Sweep Mask: %s | 0x%04X" % (bin(self.controller.sweepMask), self.controller.sweepMask))
 
         if self.chkAll.styleSheet() == "background-color: green":
             self.chkAll.setStyleSheet("")  # Uncheck the "All" button if it was checked
@@ -615,12 +615,12 @@ class TargetWheelControl(QWidget):
             self.spin_group.setEnabled(False)
             self.spSweepSpeed.setEnabled(False)
 
-
             self.controller.startSpinSweep()
-
+        
             self.updateTimeInterval = 500 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
+
 
     def StopSweep(self):
         if self.controller.connected:
