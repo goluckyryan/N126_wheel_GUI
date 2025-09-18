@@ -62,7 +62,7 @@ class TargetWheelControl(QWidget):
         self.controller = Controller()
         self.leIP = QLineEdit()
         self.lePort = QLineEdit()
-        self.bnConnect = QPushButton("Connect & Refresh")
+        self.bnConnect = QPushButton("Connect / Refresh")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
         # self.connectionStatus = QLabel("Not Connect.")
@@ -414,6 +414,13 @@ class TargetWheelControl(QWidget):
         if self.controller.connected:
             print("Update Status.")
 
+            print(f"Position: {self.controller.position}, Accel: {self.controller.accelRate}, ")
+            print(f"Deaccel: {self.controller.deaccelRate}, Speed: {self.controller.velocity}, " +
+                  f"Move Distance: {self.controller.moveDistance}, Jog Speed: {self.controller.jogSpeed}, " +
+                  f"Jog Accel: {self.controller.jogAccel}, Sweep Mask: {bin(self.controller.sweepMask)}")
+            print(f"Sweep Width: {self.controller.sweepWidth}, Spoke Width: {self.controller.spokeWidth}, " +  
+                   f"Sweep Speed: {self.controller.sweepSpeed}, Sweep Cut Off: {self.controller.sweepCutOff}")
+
             self.EncoderPos.setText(f"{self.controller.position}")
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
@@ -543,7 +550,7 @@ class TargetWheelControl(QWidget):
 
     def Sweep_picked(self, id):
         self.timer.stop()  # Stop the timer to prevent updates during sweep selection
-        print("Old Sweep Mask: %s | 0x%04X" % (bin(self.controller.sweepMask), self.controller.sweepMask))
+        print("Old Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask ))
         bitPos = id - 1
         if id == 0 :
             bitPos = 15  # Special case for target 1, which is the last bit in the mask
@@ -554,7 +561,7 @@ class TargetWheelControl(QWidget):
             print(f"Uncheck Sweep Target : {self.target_names[id]}, id : {id}")
             self.controller.sweepMask &= ~(1 << bitPos)  # Unset the bit for the target
 
-        print("New Sweep Mask: %s | 0x%04X" % (bin(self.controller.sweepMask), self.controller.sweepMask))
+        print("New Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask))
 
         if self.chkAll.styleSheet() == "background-color: green":
             self.chkAll.setStyleSheet("")  # Uncheck the "All" button if it was checked

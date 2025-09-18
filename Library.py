@@ -107,11 +107,11 @@ class Controller():
             self.velocity = float(self.queryNumber('VE',False)) # rev/sec
             self.moveDistance = float(self.queryNumber('DI',False)) # steps
 
-            self.sweepMask = int(self.queryNumber('RL3',False)) # sweep bit
-            self.sweepWidth = int(self.queryNumber('RL6',False)) 
-            self.spokeWidth = int(self.queryNumber('RL7',False)) 
-            self.sweepSpeed = int(self.queryNumber('RL8',False)) 
-            self.sweepCutOff = int(self.queryNumber('RL>',False))
+            self.sweepMask = int(self.queryNumber('RU31',False)) # sweep bit
+            self.sweepWidth = int(self.queryNumber('RU61',False)) 
+            self.spokeWidth = int(self.queryNumber('RU71',False)) 
+            self.sweepSpeed = int(self.queryNumber('RU81',False)) 
+            self.sweepCutOff = int(self.queryNumber('RU>1',False))
 
             self.position = int(self.queryNumber('RUe1',False)) # encoder position
 
@@ -266,12 +266,13 @@ class Controller():
     def checkValidMessage(self, message):
         validReadMassages = [ # message that use to read or command
             'CM', 'JS', 'JA', 'AM', 'AC', 'DE', 'VE', 'DI', 
-            'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS'
-            'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP'
-            'RU31', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU>1'
+            'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
+            'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
+            'RU31', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU>1',
+            'RU61', 'RU71', 'RU81'
         ]
         validWriteMessages = [ # message that use to write values
-            'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP'
+            'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
             'RL3', 'RL6', 'RL7', 'RL8', 'RL>', 'CS'
         ]
 
