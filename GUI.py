@@ -45,6 +45,8 @@ class CustomButton(QPushButton):
 
         super().mousePressEvent(event)
 
+
+#####################################################################
 class TargetWheelControl(QWidget):
     def __init__(self):
         super().__init__()
@@ -98,59 +100,66 @@ class TargetWheelControl(QWidget):
         target_group = QGroupBox("Target")
         target_layout = QGridLayout()
         target_group.setLayout(target_layout)
+        target_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        target_layout.addWidget(QLabel("Name"), 0, 1, 1, 4)
-        target_layout.addWidget(QLabel("Position"), 0, 5,1, 2)
-        target_layout.addWidget(QLabel("Revolution"), 0, 7,1, 2)
-        target_layout.addWidget(QLabel("En."), 0, 9)
+        # Target Grid Header
+        row = 0
+        target_layout.addWidget(QLabel("Name"), row, 1, 1, 4)
+        target_layout.addWidget(QLabel("Position"), row, 5,1, 2)
+        target_layout.addWidget(QLabel("Revolution"), row, 7,1, 2)
+        target_layout.addWidget(QLabel("En."), row, 9)
 
         # Target Buttons Grid
         for i in range(NTARGET):
-            target_layout.addWidget(QLabel(str(i)), 1+i, 0)
+            row += 1
+            target_layout.addWidget(QLabel(str(i)), row, 0)
             
             btn = CustomButton(self.target_names[i])
             btn.clicked.connect(lambda _, idx=i: self.Target_picked(idx))
             self.target_buttons.append(btn)
-            target_layout.addWidget(btn, 1+i, 1, 1, 4)
+            target_layout.addWidget(btn, row, 1, 1, 4)
 
             le = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i))
             le.returnPressed.connect(lambda idx=i: self.SetPosition(idx))
             self.target_pos.append(le)
-            target_layout.addWidget(le, 1+i, 5, 1, 2)
+            target_layout.addWidget(le, row, 5, 1, 2)
 
             le2 = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i/STEP_PER_REVOLUTION))
             le2.setReadOnly(True)
             le2.setEnabled(False)
             self.target_rev.append(le2)
-            target_layout.addWidget(le2, 1+i, 7, 1, 1)
+            target_layout.addWidget(le2, row, 7, 1, 1)
             
             chkBox = QCheckBox()
             chkBox.clicked.connect(lambda _, idx=i: self.Sweep_picked(idx))
             self.target_chkBox.append(chkBox)
-            target_layout.addWidget(chkBox, 1+i, 9)
+            target_layout.addWidget(chkBox, row, 9)
 
+        # Message display
+        row += 1
+        self.message = QLineEdit()
+        self.message.setReadOnly(True)
+        self.message.setEnabled(False)
+        self.message.setText("message display")
+        target_layout.addWidget(self.message, row, 1, 1, 6)
+
+        self.chkAll = QPushButton("Enable All Sweep")
+        target_layout.addWidget(self.chkAll, row, 7, 1, 3)
+        self.chkAll.clicked.connect(self.setAllSweepTargets)
 
         # Load/Save Buttons
+        row += 1
         load_button = QPushButton("Load Targets")
         save_button = QPushButton("Save Targets")
         load_button.clicked.connect(self.load_targets_click)
         save_button.clicked.connect(self.save_targets_click)
-        target_layout.addWidget(load_button, NTARGET + 2, 1, 1, 2)
-        target_layout.addWidget(save_button, NTARGET + 2, 3, 1, 2)
+        target_layout.addWidget(load_button, row, 1, 1, 2)
+        target_layout.addWidget(save_button, row, 3, 1, 2)
 
-        self.message = QLineEdit()
-        self.message.setReadOnly(True)
-        self.message.setEnabled(False)
-        self.message.setText("go to abs. position...")
-        target_layout.addWidget(self.message, NTARGET + 2, 5, 1, 2)
-
-        self.chkAll = QPushButton("Enable All")
-        target_layout.addWidget(self.chkAll, NTARGET + 2, 7, 1, 3)
-        self.chkAll.clicked.connect(self.setAllSweepTargets)
-
+        row += 1
         self.fileNameLineEdit = QLineEdit("")
         self.fileNameLineEdit.setReadOnly(True)
-        target_layout.addWidget(self.fileNameLineEdit, NTARGET + 3, 1, 1, 7)
+        target_layout.addWidget(self.fileNameLineEdit, row, 1, 1, 9)
         
 
         ########### Server 
@@ -264,6 +273,30 @@ class TargetWheelControl(QWidget):
         # bnReset.clicked.connect(lambda: self.controller.reset())
         # status_layout.addWidget(bnReset, row, 0, 1, 3)
 
+        ########### Lock Pos. Group
+        self.lock_group = QGroupBox("Lock Position")
+        lock_layout = QGridLayout()
+        self.lock_group.setLayout(lock_layout)
+
+        row = 0
+        self.bnLockPos = QPushButton("Lock Position")
+        lock_layout.addWidget(self.bnLockPos, row, 0, 1, 3)
+        self.bnLockPos.clicked.connect(self.LockPosition)
+
+        row += 1
+        self.cbbLLockPos = QComboBox()
+        self.cbbLLockPos.addItems([f"{self.target_names[i]}" for i in range(NTARGET)])
+        self.cbbLLockPos.addItems(["Manual Position"])
+        lock_layout.addWidget(self.cbbLLockPos, row, 0, 1, 3)
+        self.cbbLLockPos.currentIndexChanged.connect(self.LockPositionChanged)
+
+        row += 1
+        lock_layout.addWidget(QLabel("Manual Pos. : "), row, 0, 1, 1)
+        self.leLockPos = QLineEdit("0")
+        self.leLockPos.setEnabled(False)
+        lock_layout.addWidget(self.leLockPos, row, 1, 1, 2)
+
+
         ########### Spinning Control Group
         self.spin_group = QGroupBox("Spinning Control")
         spin_layout = QGridLayout()
@@ -345,6 +378,12 @@ class TargetWheelControl(QWidget):
         self.spSweepCutOff.valueChanged.connect(self.SetSweepCutOff)
         sweep_layout.addWidget(QLabel("Cut Off [rpm] : "), row, 0)
         sweep_layout.addWidget(self.spSweepCutOff, row, 1, 1, 1)
+
+        row += 1
+        self.cbSweepDirection = QComboBox()
+        self.cbSweepDirection.addItems(["Clockwise (+)", "Counterclockwise (-)"])
+        sweep_layout.addWidget(QLabel("Direction : "), row, 0)
+        sweep_layout.addWidget(self.cbSweepDirection, row, 1, 1, 1)
  
         row += 1
         self.sweepStart = QPushButton("Start sweep and spin")
@@ -359,11 +398,12 @@ class TargetWheelControl(QWidget):
 
 
         # Add groups to main layout
-        main_layout.addWidget(   target_group, 0, 0, 5, 2)
-        main_layout.addWidget(   server_group, 0, 2, 1, 2)
-        main_layout.addWidget(   status_group, 1, 2, 4, 1)        
-        main_layout.addWidget(self.spin_group, 1, 3, 2, 1)
-        main_layout.addWidget(    sweep_group, 3, 3, 2, 1)
+        main_layout.addWidget(     target_group, 0, 0, 5, 2)
+        main_layout.addWidget(     server_group, 0, 2, 1, 2)
+        main_layout.addWidget(     status_group, 1, 2, 3, 1)
+        main_layout.addWidget(  self.lock_group, 4, 2, 1, 1)      
+        main_layout.addWidget(  self.spin_group, 1, 3, 2, 1)
+        main_layout.addWidget(      sweep_group, 3, 3, 2, 1)
 
         self.setLayout(main_layout)
 
@@ -418,7 +458,7 @@ class TargetWheelControl(QWidget):
             print(f"Deaccel: {self.controller.deaccelRate}, Speed: {self.controller.velocity}, " +
                   f"Move Distance: {self.controller.moveDistance}, Jog Speed: {self.controller.jogSpeed}, " +
                   f"Jog Accel: {self.controller.jogAccel}, Sweep Mask: {bin(self.controller.sweepMask)}")
-            print(f"Sweep Width: {self.controller.sweepWidth}, Spoke Width: {self.controller.spokeWidth}, " +  
+            print(f"Sweep Offset: {self.controller.spokeOffset}, Spoke Width: {self.controller.spokeWidth}, " +  
                    f"Sweep Speed: {self.controller.sweepSpeed}, Sweep Cut Off: {self.controller.sweepCutOff}")
 
             self.EncoderPos.setText(f"{self.controller.position}")
@@ -442,14 +482,14 @@ class TargetWheelControl(QWidget):
             self.UpdateButtonsColor()
 
             #==== sweep parameters
-            self.spSweepWidth.setValue(self.controller.sweepWidth)
+            self.spSweepWidth.setValue(self.controller.spokeOffset)
             self.spSpokeWidth.setValue(self.controller.spokeWidth)
             self.spSweepSpeed.setValue(self.controller.sweepSpeed/4)
             self.spSweepCutOff.setValue(self.controller.sweepCutOff/4)
 
             #=== sweep mask
             for i in range(NTARGET):
-                bitPos = i - 1 if i > 0 else 15
+                bitPos = 15 - i
                 if self.controller.sweepMask & (1 << bitPos):
                     self.target_chkBox[i].setChecked(True)
             if self.controller.sweepMask == (1 << 16) - 1:
@@ -551,9 +591,7 @@ class TargetWheelControl(QWidget):
     def Sweep_picked(self, id):
         self.timer.stop()  # Stop the timer to prevent updates during sweep selection
         print("Old Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask ))
-        bitPos = id - 1
-        if id == 0 :
-            bitPos = 15  # Special case for target 1, which is the last bit in the mask
+        bitPos = 15 - id
         if self.target_chkBox[id].isChecked():
             print(f"Sweep Target : {self.target_names[id]}, id : {id}")
             self.controller.sweepMask |= (1 << bitPos)  # Set the bit for the target
@@ -595,7 +633,7 @@ class TargetWheelControl(QWidget):
 
     def SetSweepWidth(self):
         if self.enableSignals:
-            self.controller.setSweepWidth(self.spSweepWidth.value())
+            self.controller.setSpokeOffset(self.spSweepWidth.value())
     def SetSpokeWidth(self):
         if self.enableSignals:
             self.controller.setSpokeWidth(self.spSpokeWidth.value())
@@ -622,6 +660,13 @@ class TargetWheelControl(QWidget):
 
             self.spin_group.setEnabled(False)
             self.spSweepSpeed.setEnabled(False)
+
+            if self.cbSweepDirection.currentIndex() == 0:
+                print("Starting sweep and spin in clockwise direction.")
+                self.controller.send_message("DI100")
+            else:
+                print("Starting sweep and spin in counterclockwise direction.")
+                self.controller.send_message("DI-100")
 
             self.controller.startSpinSweep()
         
@@ -769,6 +814,62 @@ class TargetWheelControl(QWidget):
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
 
             self.UpdateButtonsColor()
+
+    def LockPositionChanged(self):
+        if self.cbbLLockPos.currentIndex() == NTARGET:
+            self.leLockPos.setEnabled(True)
+        else:
+            self.leLockPos.setEnabled(False)
+
+    def LockPosition(self):
+        if self.controller.connected:
+
+            if self.bnLockPos.styleSheet() == "":
+
+                if self.cbbLLockPos.currentIndex() == NTARGET:
+                    try:
+                        manual_pos = int(self.leLockPos.text())
+                        print(f"Locking to manual position: {manual_pos}")
+                    except ValueError:
+                        print("Invalid manual position. Please enter a valid integer.")
+                else:
+                    target_id = self.cbbLLockPos.currentIndex()
+                    target_position = int(self.target_pos[target_id].text())
+                    print(f"Locking to target {self.target_names[target_id]} at position: {target_position}")
+
+                # Send the lock command to the controller
+                # use a new QThread to avoid blocking the main thread
+
+                # set target button and position line edit to gray and disable
+                for i in range(NTARGET):
+                    self.target_buttons[i].setEnabled(False)
+                    self.target_buttons[i].setStyleSheet("background-color: lightgray")
+                    self.target_pos[i].setEnabled(False)
+                    self.chkAll.setEnabled(False)
+                    self.target_chkBox[i].setEnabled(False)
+
+                self.cbbLLockPos.setEnabled(False)
+                self.leLockPos.setEnabled(False)
+
+                self.bnLockPos.setStyleSheet("background-color: green")
+
+            else:
+                print("Unlocking position.")
+                # Send the unlock command to the controller
+
+                for i in range(NTARGET):
+                    self.target_buttons[i].setEnabled(True)
+                    self.target_buttons[i].setStyleSheet("")
+                    self.target_pos[i].setEnabled(True)
+                    self.chkAll.setEnabled(True)
+                    self.target_chkBox[i].setEnabled(True)
+
+                self.cbbLLockPos.setEnabled(True)
+                if self.cbbLLockPos.currentIndex() == NTARGET:
+                    self.leLockPos.setEnabled(True)
+
+                self.bnLockPos.setStyleSheet("")
+                
 
     def load_targets_click(self):
         self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")

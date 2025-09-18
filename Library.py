@@ -30,7 +30,7 @@ class Controller():
         self.position = 0
 
         self.sweepMask = 0x0000
-        self.sweepWidth = 0
+        self.spokeOffset = 0
         self.spokeWidth = 0
         self.sweepSpeed = 0
         self.sweepCutOff = 0
@@ -107,35 +107,35 @@ class Controller():
             self.velocity = float(self.queryNumber('VE',False)) # rev/sec
             self.moveDistance = float(self.queryNumber('DI',False)) # steps
 
-            self.sweepMask = int(self.queryNumber('RU31',False)) # sweep bit
-            self.sweepWidth = int(self.queryNumber('RU61',False)) 
-            self.spokeWidth = int(self.queryNumber('RU71',False)) 
-            self.sweepSpeed = int(self.queryNumber('RU81',False)) 
-            self.sweepCutOff = int(self.queryNumber('RU>1',False))
+            self.sweepMask = int(self.queryNumber('RU11',False)) # sweep bit
+            self.spokeWidth = int(self.queryNumber('RU21',False)) 
+            self.spokeOffset = int(self.queryNumber('RU31',False)) 
+            self.sweepSpeed = int(self.queryNumber('RU41',False)) 
+            self.sweepCutOff = int(self.queryNumber('RU51',False))
 
             self.position = int(self.queryNumber('RUe1',False)) # encoder position
 
     def setSweepMask(self, mask : int):
         if self.connected:
             self.sweepMask = mask
-            self.send_message(f'RL3{mask}')
+            self.send_message(f'RL1{mask}')
             # print(f'Sweep mask set to {mask:04X}')
-    def setSweepWidth(self, width : int):
-        if self.connected:
-            self.sweepWidth = width
-            self.send_message(f'RL6{int(width):d}')
     def setSpokeWidth(self, width : int):
         if self.connected:
             self.spokeWidth = width
-            self.send_message(f'RL7{int(width):d}')
+            self.send_message(f'RL2{int(width):d}')
+    def setSpokeOffset(self, width : int):
+        if self.connected:
+            self.spokeOffset = width
+            self.send_message(f'RL3{int(width):d}')
     def setSweepSpeed(self, speed : int):
         if self.connected:
             self.sweepSpeed = speed
-            self.send_message(f'RL8{int(speed):d}')
+            self.send_message(f'RL4{int(speed):d}')
     def setSweepCutOff(self, cutoff : int):
         if self.connected:
             self.sweepCutOff = cutoff
-            self.send_message(f'RL>{int(cutoff):d}')
+            self.send_message(f'RL5{int(cutoff):d}')
     def startSpinSweep(self):
         if self.connected:
             print("Starting spin sweep...")
@@ -144,7 +144,7 @@ class Controller():
     def stopSpinSweep(self):
         if self.connected:
             print("Stopping spin sweep...")
-            self.send_message('RL@1')
+            self.send_message('RL41')
             time.sleep(0.1)
             self.send_message('SK')
             self.isSpinning = False
@@ -268,12 +268,12 @@ class Controller():
             'CM', 'JS', 'JA', 'AM', 'AC', 'DE', 'VE', 'DI', 
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
-            'RU31', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU>1',
-            'RU61', 'RU71', 'RU81'
+            'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
+            'RU21', 'RU31', 'RU41'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
-            'RL3', 'RL6', 'RL7', 'RL8', 'RL>', 'CS'
+            'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS'
         ]
 
         for valid_message in validReadMassages:
