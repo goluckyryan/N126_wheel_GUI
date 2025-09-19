@@ -37,6 +37,11 @@ class Controller():
 
         self.stop_PID_control = False
 
+        self.temperature = 0.0
+        self.encoderVelocity = 0.0
+        self.motorVelocity = 0.0
+        self.torque = 0.0
+
 
     def __del__(self):
         # Destructor to ensure cleanup
@@ -118,6 +123,11 @@ class Controller():
 
             self.position = int(self.queryNumber('RUe1',False)) # encoder position
 
+            self.temperature = float(self.queryNumber('RUt1',False)) / 10 # temperature in C
+            self.encoderVelocity = float(self.queryNumber('RUv1',False)) # in rev/sec
+            self.motorVelocity = float(self.queryNumber('RUw1',False))
+            self.torque = float(self.queryNumber('RUx1',False))
+
     def setSweepMask(self, mask : int):
         if self.connected:
             self.sweepMask = mask
@@ -163,6 +173,34 @@ class Controller():
             else:
                 self.position = int(haha)
                 return self.position
+
+    def getTemperature(self, outputMsg=True):
+        if self.connected:
+            temp = self.queryNumber('RUt1', outputMsg)
+            return temp
+        else:
+            return math.nan
+
+    def getEncoderVelocity(self, outputMsg=True):
+        if self.connected:
+            vel = self.queryNumber('RUv1', outputMsg) / 10 # in rev/sec
+            return vel
+        else:
+            return math.nan
+        
+    def getMotorVelocity(self, outputMsg=True):
+        if self.connected:
+            vel = self.queryNumber('RUw1', outputMsg) 
+            return vel
+        else:
+            return math.nan
+        
+    def getTorque(self, outputMsg=True):
+        if self.connected:
+            torque = self.queryNumber('RUx1', outputMsg) 
+            return torque
+        else:
+            return math.nan
 
     def reset(self):
         if self.connected:
@@ -251,8 +289,17 @@ class Controller():
     #             self.send_message('FL') 
     #             time.sleep(estimatedTime)  # Wait a bit before checking again
 
+    def ConvertModPositionToAbsolute(self, target_position):
+        current_mod_position = self.position % STEP_PER_REVOLUTION
+        diff = target_position - current_mod_position
+        if diff > STEP_PER_REVOLUTION / 2:
+            diff -= STEP_PER_REVOLUTION
+        elif diff < -STEP_PER_REVOLUTION / 2:
+            diff += STEP_PER_REVOLUTION
+        target_position = self.position + diff
+        return target_position
 
-    def PID_pos_control(self, target_position, max_iterations=-1, Kp=0.5, Ki=0.0, Kd=0.0, tolerance=1):
+    def PID_pos_control(self, target_position, max_iterations=-1, tolerance=1, Kp=0.5, Ki=0.0, Kd=0.0):
         if not self.connected:
             print("Not connected to controller.")
             return
@@ -264,19 +311,13 @@ class Controller():
 
         stable_count = 0
         stable_required = 2  # Number of consecutive stable readings required
-        max_stepper_speed = 400  # Define a maximum speed in step
+        max_stepper_speed = 1000  # Define a maximum speed in step
 
         self.stop_PID_control = False
 
         # convert the target_position to the nearest equivalent absolute position 
-        current_mod_position = self.position % STEP_PER_REVOLUTION
-        diff = target_position - current_mod_position
-        if diff > STEP_PER_REVOLUTION / 2:
-            diff -= STEP_PER_REVOLUTION
-        elif diff < -STEP_PER_REVOLUTION / 2:
-            diff += STEP_PER_REVOLUTION
-        target_position = self.position + diff
-        print(f"Current mod position: {current_mod_position}, Adjusted target absolute position: {target_position}, Rev: {target_position/STEP_PER_REVOLUTION:.2f}")
+        target_position = self.ConvertModPositionToAbsolute(target_position)
+        print(f"Adjusted target absolute position: {target_position}, Rev: {target_position/STEP_PER_REVOLUTION:.2f}")
 
         while True:
             if self.stop_PID_control:
@@ -324,6 +365,11 @@ class Controller():
             # self.setVelocity(0.1) # 0.1 rev per sec
             # self.setVelocity(min(abs(output)/STEP_PER_REVOLUTION, self.velocity)) # convert output the rev per sec
             self.send_message('FL')  # Execute the move
+
+            self.temperature = float(self.queryNumber('RUt1',False)) / 10 # temperature in C
+            self.encoderVelocity = float(self.queryNumber('RUv1',False)) # in rev/sec
+            self.motorVelocity = float(self.queryNumber('RUw1',False))
+            self.torque = float(self.queryNumber('RUx1',False))
 
             previous_error = error
 

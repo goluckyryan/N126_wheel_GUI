@@ -2,6 +2,7 @@
 
 import sys
 import json
+import math
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QGridLayout,
     QGroupBox, QLabel,  QFileDialog, QCheckBox, QLineEdit, QDoubleSpinBox,
@@ -14,7 +15,7 @@ import time
 from Library import Controller, STEP_PER_REVOLUTION
 
 NTARGET = 16
-DAEFUL_POS_UPDATE_INTERVAL = 2000  # milliseconds
+DAEFUL_POS_UPDATE_INTERVAL = 1000  # milliseconds
 
 
 class CustomButton(QPushButton):
@@ -49,16 +50,15 @@ class CustomButton(QPushButton):
 class PosPIDWorker(QObject):
     finished = pyqtSignal()
 
-    def __init__(self, controller : Controller, target_position, max_iterations=-1):
+    def __init__(self, controller : Controller, target_position, max_iterations=-1, tolerance=1):
         super().__init__()
         self.controller = controller
         self.target_position = target_position
         self.max_iterations = max_iterations
+        self.tolerance = tolerance
 
     def run(self):
-        self.controller.stop_PID_control = False
-        while not self.controller.stop_PID_control:
-            self.controller.PID_pos_control(self.target_position, self.max_iterations)
+        self.controller.PID_pos_control(self.target_position, self.max_iterations, self.tolerance)
         self.finished.emit()
 
 
@@ -116,6 +116,7 @@ class TargetWheelControl(QWidget):
 
     def init_ui(self):
         main_layout = QGridLayout()
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         ########### Target group
         target_group = QGroupBox("Target")
@@ -168,6 +169,23 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(self.chkAll, row, 7, 1, 3)
         self.chkAll.clicked.connect(self.setAllSweepTargets)
 
+        # Lock Pos. 
+        row += 1
+        self.cbbLLockPos = QComboBox()
+        self.cbbLLockPos.addItems([f"{self.target_names[i]}" for i in range(NTARGET)])
+        self.cbbLLockPos.addItems(["Manual Position"])
+        target_layout.addWidget(self.cbbLLockPos, row, 1, 1, 4)
+        self.cbbLLockPos.currentIndexChanged.connect(self.LockPositionChanged)
+
+        self.leLockPos = QLineEdit("<Manual Position>")
+        self.leLockPos.setEnabled(False)
+        target_layout.addWidget(self.leLockPos, row, 5, 1, 2)
+
+        self.bnLockPos = QPushButton("Lock Position")
+        target_layout.addWidget(self.bnLockPos, row, 7, 1, 3)
+        self.bnLockPos.clicked.connect(self.LockPosition)
+
+
         # Load/Save Buttons
         row += 1
         load_button = QPushButton("Load Targets")
@@ -196,9 +214,10 @@ class TargetWheelControl(QWidget):
 
 
         ########### Status Group
-        status_group = QGroupBox("General Control")
+        self.status_group = QGroupBox("General Control")
         status_layout = QGridLayout()
-        status_group.setLayout(status_layout)
+        self.status_group.setLayout(status_layout)
+        status_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # row = 0
         # status_layout.addWidget(self.connectionStatus, row, 0, 1, 3)
@@ -207,18 +226,21 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(QLabel("Encoder Pos. : "), row, 0)
         self.EncoderPos = QLineEdit()
         self.EncoderPos.setReadOnly(True)
+        self.EncoderPos.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.EncoderPos, row, 1, 1, 2)
 
         row += 1
         status_layout.addWidget(QLabel("Encoder mod Pos. : "), row, 0)
         self.EncoderModPos = QLineEdit()
         self.EncoderModPos.setReadOnly(True)
+        self.EncoderModPos.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.EncoderModPos, row, 1, 1, 2)
 
         row += 1
         status_layout.addWidget(QLabel("Encoder Rev. : "), row, 0)
         self.EncoderRev = QLineEdit()
         self.EncoderRev.setReadOnly(True)
+        self.EncoderRev.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.EncoderRev, row, 1, 1, 2)
 
         row += 1
@@ -289,39 +311,41 @@ class TargetWheelControl(QWidget):
         bnUpdateState.clicked.connect(self.Update_Status)
         status_layout.addWidget(bnUpdateState, row, 0, 1, 3)
 
-        # row += 1
-        # bnReset = QPushButton("Reset")
-        # bnReset.clicked.connect(lambda: self.controller.reset())
-        # status_layout.addWidget(bnReset, row, 0, 1, 3)
-
-        ########### Lock Pos. Group
-        self.lock_group = QGroupBox("Lock Position")
-        lock_layout = QGridLayout()
-        self.lock_group.setLayout(lock_layout)
-
-        row = 0
-        self.bnLockPos = QPushButton("Lock Position")
-        lock_layout.addWidget(self.bnLockPos, row, 0, 1, 3)
-        self.bnLockPos.clicked.connect(self.LockPosition)
+        row += 1
+        status_layout.addWidget(QLabel("Temperature [C] : "), row, 0)
+        self.statusTemp = QLineEdit()
+        self.statusTemp.setReadOnly(True)
+        self.statusTemp.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.statusTemp, row, 1, 1, 2)
 
         row += 1
-        self.cbbLLockPos = QComboBox()
-        self.cbbLLockPos.addItems([f"{self.target_names[i]}" for i in range(NTARGET)])
-        self.cbbLLockPos.addItems(["Manual Position"])
-        lock_layout.addWidget(self.cbbLLockPos, row, 0, 1, 3)
-        self.cbbLLockPos.currentIndexChanged.connect(self.LockPositionChanged)
+        status_layout.addWidget(QLabel("Encoder Velocity [r/s] : "), row, 0)
+        self.statusEncVel = QLineEdit()
+        self.statusEncVel.setReadOnly(True)
+        self.statusEncVel.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.statusEncVel, row, 1, 1, 2)
 
         row += 1
-        lock_layout.addWidget(QLabel("Manual Pos. : "), row, 0, 1, 1)
-        self.leLockPos = QLineEdit("0")
-        self.leLockPos.setEnabled(False)
-        lock_layout.addWidget(self.leLockPos, row, 1, 1, 2)
+        status_layout.addWidget(QLabel("Motor Velocity [r/s]: "), row, 0)
+        self.statusMotVel = QLineEdit()
+        self.statusMotVel.setReadOnly(True)
+        self.statusMotVel.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.statusMotVel, row, 1, 1, 2)
 
+        row += 1
+        status_layout.addWidget(QLabel("Torque : "), row, 0)
+        self.statusTorque = QLineEdit()
+        self.statusTorque.setReadOnly(True)
+
+        self.statusTorque.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.statusTorque, row, 1, 1, 2)
+        
 
         ########### Spinning Control Group
         self.spin_group = QGroupBox("Spinning Control")
         spin_layout = QGridLayout()
         self.spin_group.setLayout(spin_layout)
+        spin_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
         self.spSpinSpeed = QDoubleSpinBox()
@@ -360,9 +384,11 @@ class TargetWheelControl(QWidget):
 
  
         ########### Sweeper Control Group
-        sweep_group = QGroupBox("Veto Sweeper Control")
+        self.sweep_group = QGroupBox("Veto Sweeper Control")
         sweep_layout = QGridLayout()
-        sweep_group.setLayout(sweep_layout)
+        self.sweep_group.setLayout(sweep_layout)
+        sweep_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
 
         row = 0
         self.spSweepWidth = QDoubleSpinBox()
@@ -419,12 +445,16 @@ class TargetWheelControl(QWidget):
 
 
         # Add groups to main layout
-        main_layout.addWidget(     target_group, 0, 0, 5, 2)
+        main_layout.addWidget(     target_group, 0, 0, 3, 2)
         main_layout.addWidget(     server_group, 0, 2, 1, 2)
-        main_layout.addWidget(     status_group, 1, 2, 3, 1)
-        main_layout.addWidget(  self.lock_group, 4, 2, 1, 1)      
-        main_layout.addWidget(  self.spin_group, 1, 3, 2, 1)
-        main_layout.addWidget(      sweep_group, 3, 3, 2, 1)
+        main_layout.addWidget(     self.status_group, 1, 2, 2, 1)
+
+        main_layout.addWidget(  self.spin_group, 1, 3, 1, 1)
+        main_layout.addWidget(      self.sweep_group, 2, 3, 1, 1)
+
+        main_layout.setRowStretch(0, 1)
+        main_layout.setRowStretch(1, 3)
+        main_layout.setRowStretch(2, 3)
 
         self.setLayout(main_layout)
 
@@ -452,17 +482,25 @@ class TargetWheelControl(QWidget):
         self.Display_Status()
         self.enableSignals = True  # Enable signals-slots after connection
 
-    def UpdateButtonsColor(self, tolerance=0.01):
-        current_Angle = self.controller.position % STEP_PER_REVOLUTION / STEP_PER_REVOLUTION
+    def UpdateButtonsColor(self, tolerance = 10): # step
+        current_pos = self.controller.position #absolute position
+        # print(f"Current absolute position: {current_pos}, mod: {current_pos%STEP_PER_REVOLUTION:.0f}")
+        
+        target_Boundary_width = STEP_PER_REVOLUTION/NTARGET
+        
         for i, pos in enumerate(self.target_pos):
-            target_Angle = int(pos.text()) % STEP_PER_REVOLUTION / STEP_PER_REVOLUTION
-            if abs(current_Angle - target_Angle) < tolerance:
-                if self.button_clicked_id != i:
-                    self.target_buttons[i].setStyleSheet("background-color: green")
-                    if self.button_clicked_id is not None:
-                        self.target_buttons[self.button_clicked_id].setStyleSheet("")
-                    self.button_clicked_id = i
-                break
+            target_pos = int(pos.text())
+            target_pos = self.controller.ConvertModPositionToAbsolute(target_pos)
+
+            if abs(current_pos - target_pos) < target_Boundary_width/2:
+                self.target_buttons[i].setStyleSheet("background-color: yellow") 
+            else:
+                self.target_buttons[i].setStyleSheet("")
+
+            if abs(current_pos - target_pos) <= tolerance:
+                self.target_buttons[i].setStyleSheet("background-color: green") 
+                self.button_clicked_id = i
+
 
     def Update_Status(self):
         if self.controller.connected:
@@ -516,7 +554,25 @@ class TargetWheelControl(QWidget):
             if self.controller.sweepMask == (1 << 16) - 1:
                 self.chkAll.setStyleSheet("background-color: green")
                 self.chkAll.setText("Disable All")
+
+            #=== other status
+            self.statusTemp.setText(f"{self.controller.temperature:.1f}")
+            self.statusEncVel.setText(f"{self.controller.encoderVelocity/STEP_PER_REVOLUTION:.2f}")
+            self.statusMotVel.setText(f"{self.controller.motorVelocity/STEP_PER_REVOLUTION:.2f}")
+            self.statusTorque.setText(f"{self.controller.torque:.2f}")
             
+
+    def UpdateOtherStatus(self):
+        if self.controller.connected:
+            if self.askPosFromEncoder:
+                self.controller.getTemperature(False)
+                self.controller.getEncoderVelocity(False)
+                self.controller.getMotorVelocity(False)
+                self.controller.getTorque(False)
+            self.statusTemp.setText(f"{self.controller.temperature:.1f}")
+            self.statusEncVel.setText(f"{self.controller.encoderVelocity/STEP_PER_REVOLUTION:.2f}")
+            self.statusMotVel.setText(f"{self.controller.motorVelocity/STEP_PER_REVOLUTION:.2f}")
+            self.statusTorque.setText(f"{self.controller.torque:.2f}")
 
     def Update_Position(self): # see self.updateTimeInterval
         if self.pauseUpdate == False:
@@ -528,6 +584,9 @@ class TargetWheelControl(QWidget):
 
             #if ModPos is close to a target, change the button color
             self.UpdateButtonsColor()
+            
+            self.UpdateOtherStatus()
+            QApplication.processEvents()  # Process events to update the UI
 
     def SetAccel(self):
         if self.enableSignals:
@@ -553,25 +612,37 @@ class TargetWheelControl(QWidget):
             self.controller.setMoveDistance(distance)
             print(f"Move Distance set to {distance:.0f} [steps]")
 
-    def StartPosPIDThread(self, target_position, max_iterations=30):
+    def StartPosPIDThread(self, target_position, max_iterations=30, tolerance=1):
 
         self.askPosFromEncoder = False  # Disable automatic position updates during movement
 
         if self.PosPIDThread is None:
             self.PosPIDThread = QThread()
-            self.PosPIDWorker = PosPIDWorker(self.controller, target_position, max_iterations)
+            self.PosPIDWorker = PosPIDWorker(self.controller, target_position, max_iterations, tolerance)
             self.PosPIDWorker.moveToThread(self.PosPIDThread)
 
             self.PosPIDThread.started.connect(self.PosPIDWorker.run)
-            self.PosPIDWorker.finished.connect(self.PosPIDThread.quit)
-            self.PosPIDWorker.finished.connect(self.PosPIDWorker.deleteLater)
-            self.PosPIDThread.finished.connect(self.PosPIDThread.deleteLater)
+            self.PosPIDWorker.finished.connect(self.MovementComplete)
 
             self.PosPIDThread.start()
             print("Started Pos PID Thread.")
     
-    def StopPosPIDThread(self, force=False):
-        if self.PosPIDWorker and force:
+    def MovementComplete(self):
+        if self.PosPIDThread is not None:
+            self.PosPIDThread.quit()
+            self.PosPIDThread.wait()
+            self.PosPIDWorker = None
+            self.PosPIDThread = None
+
+        for i in range(NTARGET):
+            self.target_buttons[i].setEnabled(True)
+            self.target_pos[i].setEnabled(True)
+
+        self.message.setText("Movement complete.")
+        self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
+
+    def StopPosPIDThread(self):
+        if self.PosPIDWorker:
             self.controller.stop_PID_control = True
             print("Stopping Pos PID Thread...")
         if self.PosPIDThread is not None:
@@ -593,11 +664,6 @@ class TargetWheelControl(QWidget):
                 self.message.setText(f"Moving {distance:.0f} steps to position {target_position}.")
 
                 self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
-                self.StopPosPIDThread() # wait until the thread is done
-
-                self.message.setText(f"Reached target position {target_position}.")
-
-                self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
 
     def Send_Message(self):
         self.timer.stop()  # Stop the timer to prevent updates during message sending
@@ -613,6 +679,13 @@ class TargetWheelControl(QWidget):
             QApplication.processEvents()  # Process events to update the UI
             return
 
+        for i in range(NTARGET):
+            self.target_buttons[i].setEnabled(False)
+            self.target_pos[i].setEnabled(False)
+
+        # Remove focus from all buttons after click
+        QApplication.focusWidget().clearFocus()
+
         #=== change color
         if  self.button_clicked_id != id:
             self.target_buttons[id].setStyleSheet("background-color: green")
@@ -627,11 +700,7 @@ class TargetWheelControl(QWidget):
         target_position = int(self.target_pos[id].text())
         self.message.setText(f"Moving to target position {target_position}.")
 
-        self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
-        self.StopPosPIDThread() # wait until the thread is done
-
-        self.message.setText(f"Reached target position {target_position}.")
-        self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
+        self.StartPosPIDThread(target_position, 30, 5) # roughty 30 seconds or less, 5 steps tolerance
 
 
     def SetPosition(self, id):
@@ -705,7 +774,7 @@ class TargetWheelControl(QWidget):
 
             for i in range(NTARGET):
                 self.target_buttons[i].setEnabled(False)
-                self.target_buttons[i].setStyleSheet("background-color: lightgray")
+                # self.target_buttons[i].setStyleSheet("background-color: lightgray")
                 self.target_pos[i].setEnabled(False)
 
             self.spin_group.setEnabled(False)
@@ -826,7 +895,7 @@ class TargetWheelControl(QWidget):
 
             for i in range(NTARGET):
                 self.target_buttons[i].setEnabled(False)
-                self.target_buttons[i].setStyleSheet("background-color: lightgray")
+                # self.target_buttons[i].setStyleSheet("background-color: lightgray")
                 self.target_pos[i].setEnabled(False)
 
             self.updateTimeInterval = 300 
@@ -890,7 +959,6 @@ class TargetWheelControl(QWidget):
                 # set target button and position line edit to gray and disable
                 for i in range(NTARGET):
                     self.target_buttons[i].setEnabled(False)
-                    self.target_buttons[i].setStyleSheet("background-color: lightgray")
                     self.target_pos[i].setEnabled(False)
                     self.chkAll.setEnabled(False)
                     self.target_chkBox[i].setEnabled(False)
@@ -909,21 +977,19 @@ class TargetWheelControl(QWidget):
             else:
                 print("Unlocking position.")
                 # Send the unlock command to the controller
-                self.StopPosPIDThread(True) # wait until the thread is done
+                self.StopPosPIDThread() # wait until the thread is done
 
                 for i in range(NTARGET):
                     self.target_buttons[i].setEnabled(True)
-                    self.target_buttons[i].setStyleSheet("")
                     self.target_pos[i].setEnabled(True)
                     self.chkAll.setEnabled(True)
                     self.target_chkBox[i].setEnabled(True)
-
-                self.UpdateButtonsColor()
 
                 self.cbbLLockPos.setEnabled(True)
                 if self.cbbLLockPos.currentIndex() == NTARGET:
                     self.leLockPos.setEnabled(True)
 
+                self.UpdateButtonsColor()
                 self.bnLockPos.setStyleSheet("")
 
 
