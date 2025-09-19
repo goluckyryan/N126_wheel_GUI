@@ -35,6 +35,9 @@ class Controller():
         self.sweepSpeed = 0
         self.sweepCutOff = 0
 
+        self.stop_PID_control = False
+
+
     def __del__(self):
         # Destructor to ensure cleanup
         print("Controller object is being destroyed. Disconnecting...")
@@ -217,6 +220,7 @@ class Controller():
             self.send_message('SJ')
             self.isSpinning = False
 
+    #======= move out from Controller to GUI, because there is no position feedback here =======
     # def gotoPosition(self, position):
     #     if self.connected:
     #         print(f"Moving to position {position}...")
@@ -246,6 +250,86 @@ class Controller():
 
     #             self.send_message('FL') 
     #             time.sleep(estimatedTime)  # Wait a bit before checking again
+
+
+    def PID_pos_control(self, target_position, max_iterations=-1, Kp=0.5, Ki=0.0, Kd=0.0, tolerance=1):
+        if not self.connected:
+            print("Not connected to controller.")
+            return
+
+        previous_error = 0.0
+        history_error = []
+        history_length = 10
+        iteration = 0
+
+        stable_count = 0
+        stable_required = 2  # Number of consecutive stable readings required
+        max_stepper_speed = 400  # Define a maximum speed in step
+
+        self.stop_PID_control = False
+
+        # convert the target_position to the nearest equivalent absolute position 
+        current_mod_position = self.position % STEP_PER_REVOLUTION
+        diff = target_position - current_mod_position
+        if diff > STEP_PER_REVOLUTION / 2:
+            diff -= STEP_PER_REVOLUTION
+        elif diff < -STEP_PER_REVOLUTION / 2:
+            diff += STEP_PER_REVOLUTION
+        target_position = self.position + diff
+        print(f"Current mod position: {current_mod_position}, Adjusted target absolute position: {target_position}, Rev: {target_position/STEP_PER_REVOLUTION:.2f}")
+
+        while True:
+            if self.stop_PID_control:
+                print("PID control stopped by user.")
+                break
+
+            if max_iterations != -1 and iteration >= max_iterations:
+                print(f"Max iterations reached. Final position: {self.getPosition(outputMsg=False)}, Target position: {target_position}")
+                self.stop_PID_control = True
+                break
+
+            current_position = self.getPosition(outputMsg=False)
+            if math.isnan(current_position):
+                print("Failed to get current position.")
+                return
+        
+
+            error = target_position - current_position
+            history_error.append(error)
+            if len(history_error) > history_length:
+                history_error.pop(0)
+            integral = sum(history_error)
+            derivative = error - previous_error
+
+            # PID output
+            output = Kp * error + Ki * integral + Kd * derivative
+
+            # Limit output to max stepper speed (in step)
+            output = int(round(max(-max_stepper_speed, min(max_stepper_speed, output))))
+
+            if abs(error) <= tolerance:
+                stable_count += 1
+                print(f"Target position {target_position} reached within tolerance {tolerance}.")
+                if stable_count >= stable_required and max_iterations > 0:
+                    self.stop_PID_control = True
+                    break
+            else:
+                stable_count = 0
+
+            print(f"Iteration {iteration}: Current Position: {current_position}, Error: {error}, Output: {output}, Velocity: {self.velocity}")
+
+            # Move the motor by the calculated output (rounded to nearest integer)
+            self.setMoveDistance(output)
+            # counld also set the velocity based on the output
+            # self.setVelocity(0.1) # 0.1 rev per sec
+            # self.setVelocity(min(abs(output)/STEP_PER_REVOLUTION, self.velocity)) # convert output the rev per sec
+            self.send_message('FL')  # Execute the move
+
+            previous_error = error
+
+            # Small delay to allow movement to start
+            time.sleep(1.0)
+            iteration += 1
 
     def get_last_message(self):
         return self.last_message

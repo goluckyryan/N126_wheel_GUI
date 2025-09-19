@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QLabel,  QFileDialog, QCheckBox, QLineEdit, QDoubleSpinBox,
     QApplication, QComboBox, QInputDialog
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QCloseEvent
 import time
 
@@ -46,6 +46,22 @@ class CustomButton(QPushButton):
         super().mousePressEvent(event)
 
 
+class PosPIDWorker(QObject):
+    finished = pyqtSignal()
+
+    def __init__(self, controller : Controller, target_position, max_iterations=-1):
+        super().__init__()
+        self.controller = controller
+        self.target_position = target_position
+        self.max_iterations = max_iterations
+
+    def run(self):
+        self.controller.stop_PID_control = False
+        while not self.controller.stop_PID_control:
+            self.controller.PID_pos_control(self.target_position, self.max_iterations)
+        self.finished.emit()
+
+
 #####################################################################
 class TargetWheelControl(QWidget):
     def __init__(self):
@@ -80,7 +96,12 @@ class TargetWheelControl(QWidget):
         self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL  # milliseconds
         self.timer.start(self.updateTimeInterval) 
         self.pauseUpdate = False
+        self.askPosFromEncoder = True
 
+        self.PosPIDThread = None
+        self.PosPIDWorker = None
+
+            
     def closeEvent(self, event: QCloseEvent):
         if self.fileName is None or self.fileName == "":
             self.save_targets_click()
@@ -499,10 +520,14 @@ class TargetWheelControl(QWidget):
 
     def Update_Position(self): # see self.updateTimeInterval
         if self.pauseUpdate == False:
-            self.controller.getPosition(False) 
+            if self.askPosFromEncoder:
+                self.controller.getPosition(False)
             self.EncoderPos.setText(f"{self.controller.position}") 
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
+
+            #if ModPos is close to a target, change the button color
+            self.UpdateButtonsColor()
 
     def SetAccel(self):
         if self.enableSignals:
@@ -528,14 +553,51 @@ class TargetWheelControl(QWidget):
             self.controller.setMoveDistance(distance)
             print(f"Move Distance set to {distance:.0f} [steps]")
 
+    def StartPosPIDThread(self, target_position, max_iterations=30):
+
+        self.askPosFromEncoder = False  # Disable automatic position updates during movement
+
+        if self.PosPIDThread is None:
+            self.PosPIDThread = QThread()
+            self.PosPIDWorker = PosPIDWorker(self.controller, target_position, max_iterations)
+            self.PosPIDWorker.moveToThread(self.PosPIDThread)
+
+            self.PosPIDThread.started.connect(self.PosPIDWorker.run)
+            self.PosPIDWorker.finished.connect(self.PosPIDThread.quit)
+            self.PosPIDWorker.finished.connect(self.PosPIDWorker.deleteLater)
+            self.PosPIDThread.finished.connect(self.PosPIDThread.deleteLater)
+
+            self.PosPIDThread.start()
+            print("Started Pos PID Thread.")
+    
+    def StopPosPIDThread(self, force=False):
+        if self.PosPIDWorker and force:
+            self.controller.stop_PID_control = True
+            print("Stopping Pos PID Thread...")
+        if self.PosPIDThread is not None:
+            self.PosPIDThread.quit()
+            self.PosPIDThread.wait()
+            self.PosPIDThread = None
+            self.PosPIDWorker = None
+            print("Pos PID Thread Stopped.")
+        
+        self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
+
     def moveDistance(self):
         if self.controller.connected:
             distance = self.spMoveDistance.value()
             if distance != 0:
-                print(f"Moving {distance:.0f} steps.")
-                self.controller.send_message("FL")
 
-                self.CheckPostionStable()  # Check if the position is stable after moving
+                #calculate target position
+                target_position = self.controller.position + distance
+                self.message.setText(f"Moving {distance:.0f} steps to position {target_position}.")
+
+                self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
+                self.StopPosPIDThread() # wait until the thread is done
+
+                self.message.setText(f"Reached target position {target_position}.")
+
+                self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
 
     def Send_Message(self):
         self.timer.stop()  # Stop the timer to prevent updates during message sending
@@ -560,29 +622,17 @@ class TargetWheelControl(QWidget):
             self.button_clicked_id = id
 
         # === move to target position
+        self.askPosFromEncoder = False  # Stop updating position from encoder, get what the controller has
+
         target_position = int(self.target_pos[id].text())
-        print(f"Target : {self.target_names[id]}, id : {id}, position : {target_position}")
+        self.message.setText(f"Moving to target position {target_position}.")
 
-        tarAngle = (target_position % STEP_PER_REVOLUTION ) / STEP_PER_REVOLUTION
-        posAngle = (self.controller.position % STEP_PER_REVOLUTION ) / STEP_PER_REVOLUTION
-        diffAngle = tarAngle - posAngle
-        if diffAngle < -0.5:
-            diffAngle += 1.0
-        elif diffAngle > 0.5:
-            diffAngle -= 1.0
-        print(f"Target Angle : {tarAngle:.4f}, Current Angle : {posAngle:.4f}, Difference : {diffAngle:.4f} rev.")
+        self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
+        self.StopPosPIDThread() # wait until the thread is done
 
-        moveDistance = int(diffAngle * STEP_PER_REVOLUTION)  # Convert to steps
-        goto_position = self.controller.position + moveDistance 
-        print(f"Moving to target position: {goto_position} mod {STEP_PER_REVOLUTION} = {goto_position % STEP_PER_REVOLUTION} = {target_position}.")
+        self.message.setText(f"Reached target position {target_position}.")
+        self.askPosFromEncoder = True  # Re-enable automatic position updates after movement
 
-        self.message.setText(f"Moving to absolute position: {goto_position}.")
-
-        self.controller.setMoveDistance(moveDistance)
-        self.spMoveDistance.setValue(moveDistance)
-        self.controller.send_message("FL")  # Send the command to move
-
-        self.CheckPostionStable() 
 
     def SetPosition(self, id):
         # print(f"Set Position for Target {id}: {self.target_pos[id].text()}")
@@ -828,17 +878,14 @@ class TargetWheelControl(QWidget):
 
                 if self.cbbLLockPos.currentIndex() == NTARGET:
                     try:
-                        manual_pos = int(self.leLockPos.text())
-                        print(f"Locking to manual position: {manual_pos}")
+                        target_position = int(self.leLockPos.text())
+                        print(f"Locking to manual position: {target_position}")
                     except ValueError:
                         print("Invalid manual position. Please enter a valid integer.")
                 else:
                     target_id = self.cbbLLockPos.currentIndex()
-                    target_position = int(self.target_pos[target_id].text())
+                    target_position = int(self.target_pos[target_id].text()) 
                     print(f"Locking to target {self.target_names[target_id]} at position: {target_position}")
-
-                # Send the lock command to the controller
-                # use a new QThread to avoid blocking the main thread
 
                 # set target button and position line edit to gray and disable
                 for i in range(NTARGET):
@@ -853,9 +900,16 @@ class TargetWheelControl(QWidget):
 
                 self.bnLockPos.setStyleSheet("background-color: green")
 
+                # Send the lock command to the controller
+                # use a new QThread to avoid blocking the main thread
+                print("Locking position.")
+
+                self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
+                    
             else:
                 print("Unlocking position.")
                 # Send the unlock command to the controller
+                self.StopPosPIDThread(True) # wait until the thread is done
 
                 for i in range(NTARGET):
                     self.target_buttons[i].setEnabled(True)
@@ -864,12 +918,14 @@ class TargetWheelControl(QWidget):
                     self.chkAll.setEnabled(True)
                     self.target_chkBox[i].setEnabled(True)
 
+                self.UpdateButtonsColor()
+
                 self.cbbLLockPos.setEnabled(True)
                 if self.cbbLLockPos.currentIndex() == NTARGET:
                     self.leLockPos.setEnabled(True)
 
                 self.bnLockPos.setStyleSheet("")
-                
+
 
     def load_targets_click(self):
         self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")
