@@ -118,15 +118,20 @@ class Controller():
             self.sweepMask = int(self.queryNumber('RU11',False)) # sweep bit
             self.spokeWidth = int(self.queryNumber('RU21',False)) 
             self.spokeOffset = int(self.queryNumber('RU31',False)) 
-            self.sweepSpeed = int(self.queryNumber('RU41',False)) 
-            self.sweepCutOff = int(self.queryNumber('RU51',False))
+            self.sweepSpeed = int(self.queryNumber('RU41',False)) / 4.#  rpm
+            self.sweepCutOff = int(self.queryNumber('RU51',False)) / 4. #  rpm
 
             self.position = int(self.queryNumber('RUe1',False)) # encoder position
 
             self.temperature = float(self.queryNumber('RUt1',False)) / 10 # temperature in C
-            self.encoderVelocity = float(self.queryNumber('RUv1',False)) # in rev/sec
-            self.motorVelocity = float(self.queryNumber('RUw1',False))
+            self.encoderVelocity = float(self.queryNumber('RUv1',False)) / 4. #  rpm 
+            self.motorVelocity = float(self.queryNumber('RUw1',False)) / 4. #  rpm 
             self.torque = float(self.queryNumber('RUx1',False))
+
+            # firmware set the minimm sweep speed to 6 rpm
+            if self.sweepSpeed < 6 :
+                self.sweepSpeed = 6.0
+                self.setSweepSpeed(6.0)
 
     def setSweepMask(self, mask : int):
         if self.connected:
@@ -141,14 +146,14 @@ class Controller():
         if self.connected:
             self.spokeOffset = width
             self.send_message(f'RL3{int(width):d}')
-    def setSweepSpeed(self, speed : int):
+    def setSweepSpeed(self, speed : float):
         if self.connected:
-            self.sweepSpeed = speed
-            self.send_message(f'RL4{int(speed):d}')
-    def setSweepCutOff(self, cutoff : int):
+            self.sweepSpeed = speed  # in rpm
+            self.send_message(f'RL4{int(speed * 4):d}')
+    def setSweepCutOff(self, cutoff : float):
         if self.connected:
-            self.sweepCutOff = cutoff
-            self.send_message(f'RL5{int(cutoff):d}')
+            self.sweepCutOff = cutoff # in rpm
+            self.send_message(f'RL5{int(cutoff * 4):d}')
     def startSpinSweep(self):
         if self.connected:
             print("Starting spin sweep...")
@@ -157,8 +162,6 @@ class Controller():
     def stopSpinSweep(self):
         if self.connected:
             print("Stopping spin sweep...")
-            self.send_message('RL41')
-            time.sleep(0.1)
             self.send_message('SK')
             self.isSpinning = False
 
@@ -176,29 +179,29 @@ class Controller():
 
     def getTemperature(self, outputMsg=True):
         if self.connected:
-            temp = self.queryNumber('RUt1', outputMsg)
-            return temp
+            self.temperaturep = self.queryNumber('RUt1', outputMsg) / 10 # temperature in C
+            return self.temperature
         else:
             return math.nan
 
     def getEncoderVelocity(self, outputMsg=True):
         if self.connected:
-            vel = self.queryNumber('RUv1', outputMsg) / 10 # in rev/sec
-            return vel
+            self.encoderVelocity = self.queryNumber('RUv1', outputMsg) / 4.  # in rpm
+            return self.encoderVelocity
         else:
             return math.nan
         
     def getMotorVelocity(self, outputMsg=True):
         if self.connected:
-            vel = self.queryNumber('RUw1', outputMsg) 
-            return vel
+            self.motorVelocity = self.queryNumber('RUw1', outputMsg) / 4. # in rpm 
+            return self.motorVelocity
         else:
             return math.nan
         
     def getTorque(self, outputMsg=True):
         if self.connected:
-            torque = self.queryNumber('RUx1', outputMsg) 
-            return torque
+            self.torque = self.queryNumber('RUx1', outputMsg) # diff between motor and encoder position
+            return self.torque
         else:
             return math.nan
 
