@@ -62,7 +62,10 @@ class PosPIDWorker(QObject):
         self.finished.emit()
 
 
-#####################################################################
+#########################################################################################################
+#########################################################################################################
+#########################################################################################################
+#########################################################################################################
 class TargetWheelControl(QWidget):
     def __init__(self):
         super().__init__()
@@ -75,16 +78,9 @@ class TargetWheelControl(QWidget):
         self.target_names = [f"Target {i}" for i in range(16)]
         self.fileName = None
 
-        self.button_clicked_id = None
+        self.button_clicked_id = None # which target button is clicked
 
         self.controller = Controller()
-        self.leIP = QLineEdit()
-        self.lePort = QLineEdit()
-        self.bnConnect = QPushButton("Connect / Refresh")
-        self.bnConnect.clicked.connect(self.Connect_Server)
-
-        # self.connectionStatus = QLabel("Not Connect.")
-        # self.connectionStatus.setStyleSheet("color : red")
 
         self.init_ui()
 
@@ -101,7 +97,6 @@ class TargetWheelControl(QWidget):
         self.PosPIDThread = None
         self.PosPIDWorker = None
 
-            
     def closeEvent(self, event: QCloseEvent):
         if self.fileName is None or self.fileName == "":
             self.save_targets_click()
@@ -114,6 +109,7 @@ class TargetWheelControl(QWidget):
         event.accept()  # Optional: confirm you want to close
         print("============= Program Ended.")
 
+    ######################################################################################## GUI
     def init_ui(self):
         main_layout = QGridLayout()
         main_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -206,6 +202,11 @@ class TargetWheelControl(QWidget):
         server_layout = QGridLayout()
         server_group.setLayout(server_layout)
 
+        self.leIP = QLineEdit()
+        self.lePort = QLineEdit()
+        self.bnConnect = QPushButton("Connect")
+        self.bnConnect.clicked.connect(self.Connect_Server)
+
         server_layout.addWidget(QLabel("IP :"), 0, 0)
         server_layout.addWidget(self.leIP, 0, 1, 1, 5)
         server_layout.addWidget(QLabel("Port :"), 1, 0)
@@ -262,6 +263,13 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(self.spSpeed, row, 1, 1, 2)
 
         row += 1
+        status_layout.addWidget(QLabel("Speed. [rpm] : "), row, 0)
+        self.statusSpeed = QLineEdit()
+        self.statusSpeed.setReadOnly(True)
+        self.statusSpeed.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.statusSpeed, row, 1, 1, 2)
+
+        row += 1
         status_layout.addWidget(QLabel("Deaccel. [r/s^2] : "), row, 0)
         self.spDeccel = QDoubleSpinBox()
         self.spDeccel.setDecimals(3)
@@ -295,24 +303,7 @@ class TargetWheelControl(QWidget):
         self.bnZeroEncoderPosition.clicked.connect(self.ZeroEncoderPosition)
 
         row += 1
-        self.leSendMsg = QLineEdit()
-        self.leSendMsg.returnPressed.connect(self.Send_Message)
-        status_layout.addWidget(QLabel("Send CMD : "), row, 0)
-        status_layout.addWidget(self.leSendMsg, row, 1, 1, 2)
-
-        row += 1
-        self.leGetMsg = QLineEdit()
-        self.leGetMsg.setReadOnly(True)
-        status_layout.addWidget(QLabel("Reply : "), row, 0)
-        status_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
-
-        row += 1
-        self.bnUpdateState = QPushButton("Update Status")
-        self.bnUpdateState.clicked.connect(self.Update_Status)
-        status_layout.addWidget(self.bnUpdateState, row, 0, 1, 3)
-
-        row += 1
-        status_layout.addWidget(QLabel("Temperature [C] : "), row, 0)
+        status_layout.addWidget(QLabel("Controller Temp. [C] : "), row, 0)
         self.statusTemp = QLineEdit()
         self.statusTemp.setReadOnly(True)
         self.statusTemp.setStyleSheet("background-color : lightgray")
@@ -333,13 +324,38 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(self.statusMotVel, row, 1, 1, 2)
 
         row += 1
-        status_layout.addWidget(QLabel("Torque : "), row, 0)
+        status_layout.addWidget(QLabel("Torque [step] : "), row, 0)
         self.statusTorque = QLineEdit()
         self.statusTorque.setReadOnly(True)
 
         self.statusTorque.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.statusTorque, row, 1, 1, 2)
+
+        row += 1
+        self.bnUpdateState = QPushButton("Update Status")
+        self.bnUpdateState.clicked.connect(self.Update_Status)
+        status_layout.addWidget(self.bnUpdateState, row, 0, 1, 3)
         
+        manual_group = QGroupBox("Manual Command")
+        manual_layout = QGridLayout()
+        manual_group.setLayout(manual_layout)
+        manual_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        row += 1
+        status_layout.addWidget(manual_group, row, 0, 1, 3)
+
+        row = 0
+        self.leSendMsg = QLineEdit()
+        self.leSendMsg.returnPressed.connect(self.Send_Message)
+        manual_layout.addWidget(QLabel("Send CMD : "), row, 0)
+        manual_layout.addWidget(self.leSendMsg, row, 1, 1, 2)
+
+        row += 1
+        self.leGetMsg = QLineEdit()
+        self.leGetMsg.setReadOnly(True)
+        manual_layout.addWidget(QLabel("Reply : "), row, 0)
+        manual_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
+
 
         ########### Spinning Control Group
         self.spin_group = QGroupBox("Spinning Control")
@@ -355,6 +371,13 @@ class TargetWheelControl(QWidget):
         spin_layout.addWidget(QLabel("Spin Speed [r/s] : "), row, 0)
         spin_layout.addWidget(self.spSpinSpeed, row, 1, 1, 2)
         self.spSpinSpeed.valueChanged.connect(self.SetSpinSpeed)
+
+        row += 1
+        spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
+        self.statusSpinSpeed = QLineEdit()
+        self.statusSpinSpeed.setReadOnly(True)
+        self.statusSpinSpeed.setStyleSheet("background-color : lightgray")
+        spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
 
         row += 1
         self.spSpinAccel = QDoubleSpinBox()
@@ -381,14 +404,6 @@ class TargetWheelControl(QWidget):
         spin_layout.addWidget(self.bnSpinStop, row, 0, 1, 3)
         self.bnSpinStop.clicked.connect(self.StopSpin)
         self.bnSpinStop.setEnabled(False)
-
-        row += 1
-        spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
-        self.statusSpinSpeed = QLineEdit()
-        self.statusSpinSpeed.setReadOnly(True)
-        self.statusSpinSpeed.setStyleSheet("background-color : lightgray")
-        spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
-
  
         ########### Sweeper Control Group
         self.sweep_group = QGroupBox("Veto Sweeper Control")
@@ -423,6 +438,13 @@ class TargetWheelControl(QWidget):
         self.spSweepSpeed.valueChanged.connect(self.SetSweepSpeed)
         sweep_layout.addWidget(QLabel("Speed [rpm] : "), row, 0)
         sweep_layout.addWidget(self.spSweepSpeed, row, 1, 1, 1)
+
+        row += 1
+        sweep_layout.addWidget(QLabel("Speed [r/s] : "), row, 0)
+        self.statusSweepSpeed = QLineEdit()
+        self.statusSweepSpeed.setReadOnly(True)
+        self.statusSweepSpeed.setStyleSheet("background-color : lightgray")
+        sweep_layout.addWidget(self.statusSweepSpeed, row, 1, 1, 1)
  
         row += 1
         self.spSweepCutOff = QDoubleSpinBox()
@@ -452,11 +474,12 @@ class TargetWheelControl(QWidget):
 
 
         # Add groups to main layout
-        main_layout.addWidget(     target_group, 0, 0, 3, 2)
-        main_layout.addWidget(     server_group, 0, 2, 1, 2)
-        main_layout.addWidget(     self.status_group, 1, 2, 2, 1)
+        main_layout.addWidget(          target_group, 0, 0, 3, 2)
+        main_layout.addWidget(          server_group, 0, 3, 1, 1)
 
-        main_layout.addWidget(  self.spin_group, 1, 3, 1, 1)
+        main_layout.addWidget(     self.status_group, 0, 2, 3, 1)
+
+        main_layout.addWidget(       self.spin_group, 1, 3, 1, 1)
         main_layout.addWidget(      self.sweep_group, 2, 3, 1, 1)
 
         main_layout.setRowStretch(0, 1)
@@ -558,6 +581,7 @@ class TargetWheelControl(QWidget):
             self.spAccel.setValue(self.controller.accelRate)
             self.spDeccel.setValue(self.controller.deaccelRate)
             self.spSpeed.setValue(self.controller.velocity)
+            self.statusSpeed.setText(f"{self.controller.velocity*60:.1f}")
             self.spMoveDistance.setValue(self.controller.moveDistance)
 
             self.spSpinSpeed.setValue(self.controller.jogSpeed)
@@ -577,6 +601,7 @@ class TargetWheelControl(QWidget):
             self.spSweepWidth.setValue(self.controller.spokeOffset)
             self.spSpokeWidth.setValue(self.controller.spokeWidth)
             self.spSweepSpeed.setValue(self.controller.sweepSpeed)
+            self.statusSweepSpeed.setText(f"{self.controller.sweepSpeed/60.:.1f}")
             self.spSweepCutOff.setValue(self.controller.sweepCutOff)
 
             #=== sweep mask
@@ -652,7 +677,8 @@ class TargetWheelControl(QWidget):
         if self.enableSignals:
             speed = self.spSpeed.value()
             self.controller.setVelocity(speed)
-            print(f"Speed set to {speed:.1f} [r/s]")
+            self.statusSpeed.setText(f"{speed*60:.1f} [rpm]")
+            print(f"Speed set to {speed:.1f} [r/s] = {speed*60:.1f} [rpm]")
 
     def SetDeaccel(self):
         if self.enableSignals:
@@ -946,6 +972,7 @@ class TargetWheelControl(QWidget):
     def SetSweepSpeed(self):
         if self.enableSignals:
             self.controller.setSweepSpeed( self.spSweepSpeed.value())
+            self.statusSweepSpeed.setText(f"{self.spSweepSpeed.value()/60.:.1f}")
 
     def SetSweepCutOff(self):
         if self.enableSignals:

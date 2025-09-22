@@ -15,32 +15,33 @@ class Controller():
         self.last_message = None
 
         self.isSpinning = False
-        self.jogSpeed = 0.0
-        self.jogAccel = 0.0
-        self.jogDeccel = 0.0
+        self.jogSpeed = 0.0 # rev/sec
+        self.jogAccel = 0.0 # rev/sec/sec
+        self.jogDeccel = 0.0 # rev/sec/sec
 
         self.commandMode = None
 
-        self.maxAccel = 0.0
-        self.accelRate = 0.0
-        self.velocity = 0.0
-        self.deaccelRate = 0.0
-        self.moveDistance = 0
+        self.maxAccel = 0.0 # rev/sec/sec
+        self.accelRate = 0.0 # rev/sec/sec
+        self.velocity = 0.0     # rev/sec
+        self.deaccelRate = 0.0 # rev/sec/sec
+        self.moveDistance = 0 # steps
 
-        self.position = 0
+        self.position = 0  # encoder position in steps
 
-        self.sweepMask = 0x0000
-        self.spokeOffset = 0
-        self.spokeWidth = 0
-        self.sweepSpeed = 0
-        self.sweepCutOff = 0
+        self.sweepMask = 0x0000     # bit mask for spokes
+        self.spokeOffset = 0 # in steps
+        self.spokeWidth = 0 # in steps
+        self.sweepSpeed = 0 # in rpm
+        self.sweepCutOff = 0 # in rpm
 
         self.stop_PID_control = False
 
-        self.temperature = 0.0
-        self.encoderVelocity = 0.0
-        self.motorVelocity = 0.0
-        self.torque = 0.0
+        self.temperature = 0.0  # in C
+        self.encoderVelocity = 0.0 # in rpm
+        self.motorVelocity = 0.0    # in rpm
+        self.torque = 0.0 # diff between motor and encoder position
+        self.torque_ref = 0.0 # inital value of the torque
 
 
     def __del__(self):
@@ -126,7 +127,8 @@ class Controller():
             self.temperature = float(self.queryNumber('RUt1',False)) / 10 # temperature in C
             self.encoderVelocity = float(self.queryNumber('RUv1',False)) / 4. #  rpm 
             self.motorVelocity = float(self.queryNumber('RUw1',False)) / 4. #  rpm 
-            self.torque = float(self.queryNumber('RUx1',False))
+            self.torque_ref = float(self.queryNumber('RUx1',False))
+            self.torque = 0.0 # reset torque to zero
 
             # firmware set the minimm sweep speed to 6 rpm
             if self.sweepSpeed < 6 :
@@ -200,7 +202,7 @@ class Controller():
         
     def getTorque(self, outputMsg=True):
         if self.connected:
-            self.torque = self.queryNumber('RUx1', outputMsg) # diff between motor and encoder position
+            self.torque = self.queryNumber('RUx1', outputMsg) - self.torque_ref # diff between motor and encoder position
             return self.torque
         else:
             return math.nan
