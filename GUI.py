@@ -462,6 +462,14 @@ class TargetWheelControl(QWidget):
         # sweep_layout.addWidget(self.cbSweepDirection, row, 1, 1, 1)
  
         row += 1
+        direction_label = QLabel("Only Positive Direction")
+        # direction_label.setStyleSheet("color: blue; font-weight: bold;")
+        direction_label.setStyleSheet("color: blue;")
+        direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sweep_layout.addWidget(direction_label, row, 0, 1, 2)
+
+
+        row += 1
         self.sweepStart = QPushButton("Start sweep and spin")
         self.sweepStart.clicked.connect(self.StartSweep)
         sweep_layout.addWidget(self.sweepStart, row, 0, 1, 2)
@@ -483,7 +491,7 @@ class TargetWheelControl(QWidget):
         main_layout.addWidget(      self.sweep_group, 2, 3, 1, 1)
 
         main_layout.setRowStretch(0, 1)
-        main_layout.setRowStretch(1, 3)
+        main_layout.setRowStretch(1, 2)
         main_layout.setRowStretch(2, 3)
 
         self.setLayout(main_layout)
