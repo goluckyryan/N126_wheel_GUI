@@ -395,7 +395,7 @@ class TargetWheelControl(QWidget):
         self.spSweepWidth.setDecimals(0)
         self.spSweepWidth.setSingleStep(1)
         self.spSweepWidth.setRange(0, 512)
-        self.spSweepWidth.valueChanged.connect(self.SetSweepWidth)
+        self.spSweepWidth.valueChanged.connect(self.SetSpokeWidth)
         sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
         sweep_layout.addWidget(self.spSweepWidth, row, 1, 1, 1)
 
@@ -404,7 +404,7 @@ class TargetWheelControl(QWidget):
         self.spSpokeWidth.setDecimals(0)
         self.spSpokeWidth.setSingleStep(1)
         self.spSpokeWidth.setRange(0, 511)
-        self.spSpokeWidth.valueChanged.connect(self.SetSpokeWidth)
+        self.spSpokeWidth.valueChanged.connect(self.SetSpokeOffset)
         sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
         sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
  
@@ -750,12 +750,12 @@ class TargetWheelControl(QWidget):
         self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
 
 
-    def SetSweepWidth(self):
-        if self.enableSignals:
-            self.controller.setSpokeOffset(self.spSweepWidth.value())
     def SetSpokeWidth(self):
         if self.enableSignals:
-            self.controller.setSpokeWidth(self.spSpokeWidth.value())
+            self.controller.setSpokeWidth(self.spSweepWidth.value())
+    def SetSpokeOffset(self):
+        if self.enableSignals:
+            self.controller.setSpokeOffset(self.spSpokeWidth.value())
     def SetSweepSpeed(self):
         if self.enableSignals:
             haha = int(self.spSweepSpeed.value() * 4)
