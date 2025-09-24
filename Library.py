@@ -404,11 +404,12 @@ class Controller():
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
             'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
-            'RU21', 'RU31', 'RU41'
+            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
-            'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS'
+            'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS', "QX1", "QX4",
+            'RL6', 'RL7', 'RL8', 'RL9', 'RL;'
         ]
 
         for valid_message in validReadMassages:
