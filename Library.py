@@ -354,7 +354,7 @@ class Controller():
         target_position = self.position + diff
         return target_position
 
-    def PID_pos_control(self, target_position, max_iterations=-1, tolerance=1, Kp=0.5, Ki=0.0, Kd=0.0):
+    def PID_pos_control(self, target_position, max_iterations=-1, tolerance=1, Kp=0.5, Ki=0.0, Kd=0.1):
         if not self.connected:
             print("Not connected to controller.")
             return

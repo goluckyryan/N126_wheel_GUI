@@ -51,15 +51,18 @@ class CustomButton(QPushButton):
 class PosPIDWorker(QObject):
     finished = pyqtSignal()
 
-    def __init__(self, controller : Controller, target_position, max_iterations=-1, tolerance=1):
+    def __init__(self, controller : Controller, target_position, max_iterations=-1, tolerance=1, kp=0.5, ki=0.1, kd=0.1):
         super().__init__()
         self.controller = controller
         self.target_position = target_position
         self.max_iterations = max_iterations
         self.tolerance = tolerance
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
 
     def run(self):
-        self.controller.PID_pos_control(self.target_position, self.max_iterations, self.tolerance)
+        self.controller.PID_pos_control(self.target_position, self.max_iterations, self.tolerance, self.kp, self.ki, self.kd)
         self.finished.emit()
 
 
@@ -97,6 +100,9 @@ class TargetWheelControl(QWidget):
 
         self.PosPIDThread = None
         self.PosPIDWorker = None
+        self.kp = 0.5
+        self.ki = 0.0
+        self.kd = 0.1
 
     def closeEvent(self, event: QCloseEvent):
         if self.fileName is None or self.fileName == "":
@@ -184,6 +190,11 @@ class TargetWheelControl(QWidget):
         self.bnLockPos = QPushButton("Lock Position")
         target_layout.addWidget(self.bnLockPos, row, 7, 1, 3)
         self.bnLockPos.clicked.connect(self.LockPosition)
+
+        row += 1
+        self.bnPIDParam = QPushButton("Set PID Parameters")
+        target_layout.addWidget(self.bnPIDParam, row, 7, 1, 3)
+        self.bnPIDParam.clicked.connect(self.SetPIDParameters)
 
         # Add a vertical spacer to push following widgets down
         row += 1
@@ -608,6 +619,7 @@ class TargetWheelControl(QWidget):
         
         self.cbbLLockPos.setEnabled(enable)
         self.bnLockPos.setEnabled(enable)
+        self.bnPIDParam.setEnabled(enable)
         # if all:
         #     self.chkAll.setEnabled(enable)
         #     for i in range(NTARGET):
@@ -859,7 +871,7 @@ class TargetWheelControl(QWidget):
 
         if self.PosPIDThread is None:
             self.PosPIDThread = QThread()
-            self.PosPIDWorker = PosPIDWorker(self.controller, target_position, max_iterations, tolerance)
+            self.PosPIDWorker = PosPIDWorker(self.controller, target_position, max_iterations, tolerance, self.kp, self.ki, self.kd)
             self.PosPIDWorker.moveToThread(self.PosPIDThread)
 
             self.PosPIDThread.started.connect(self.PosPIDWorker.run)
@@ -1008,6 +1020,7 @@ class TargetWheelControl(QWidget):
 
                 self.cbbLLockPos.setEnabled(False)
                 self.leLockPos.setEnabled(False)
+                self.bnPIDParam.setEnabled(False)
 
                 self.bnLockPos.setStyleSheet("background-color: green")
 
@@ -1015,7 +1028,7 @@ class TargetWheelControl(QWidget):
                 # use a new QThread to avoid blocking the main thread
                 print("Locking position.")
 
-                self.StartPosPIDThread(target_position, 30) # roughty 30 seconds or less
+                self.StartPosPIDThread(target_position, -1) # no max iteration, 1 step tolerance
                     
             else:
                 print("Unlocking position.")
@@ -1028,6 +1041,7 @@ class TargetWheelControl(QWidget):
                     self.chkAll.setEnabled(True)
                     self.target_chkBox[i].setEnabled(True)
 
+                self.bnPIDParam.setEnabled(True)
                 self.cbbLLockPos.setEnabled(True)
                 if self.cbbLLockPos.currentIndex() == NTARGET:
                     self.leLockPos.setEnabled(True)
@@ -1035,6 +1049,23 @@ class TargetWheelControl(QWidget):
                 self.UpdateButtonsColor()
                 self.bnLockPos.setStyleSheet("")
 
+    def SetPIDParameters(self):
+        # open a dialog to set PID parameters
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Set PID Parameters")
+        dialog.setLabelText("Enter PID parameters (Kp, Ki, Kd) separated by commas:")
+        dialog.setTextValue(f"{self.kp}, {self.ki}, {self.kd}")
+        dialog.resize(300, 100)
+        if dialog.exec() == QInputDialog.DialogCode.Accepted:
+            text = dialog.textValue()
+            try:
+                Kp, Ki, Kd = map(float, text.split(","))
+                self.kp = Kp
+                self.ki = Ki
+                self.kd = Kd
+                print(f"PID parameters set to Kp={Kp}, Ki={Ki}, Kd={Kd}")
+            except ValueError:
+                print("Invalid input. Please enter three numeric values separated by commas.")
 
     #======================================================================================== Sweep Control
     def SetSpokeWidth(self):
