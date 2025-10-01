@@ -378,7 +378,7 @@ class Controller():
 
         stable_count = 0
         stable_required = 2  # Number of consecutive stable readings required
-        max_stepper_speed = 1000  # Define a maximum speed in step
+        max_stepper_speed = 8000  # Define a maximum speed in step
 
         self.stop_PID_control = False
 
@@ -443,6 +443,8 @@ class Controller():
             # Small delay to allow movement to start
             time.sleep(1.0)
             iteration += 1
+
+        self.stopSpin()
 
     def get_last_message(self):
         return self.last_message
