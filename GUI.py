@@ -232,7 +232,7 @@ class TargetWheelControl(QWidget):
         server_layout.addWidget(self.bnConnect, 1, 4, 1, 2)
 
 
-        ########### Status Group
+        #&########## Status Group
         self.status_group = QGroupBox("General Control")
         status_layout = QGridLayout()
         self.status_group.setLayout(status_layout)
@@ -354,6 +354,7 @@ class TargetWheelControl(QWidget):
         self.bnUpdateState.clicked.connect(self.Update_Status)
         status_layout.addWidget(self.bnUpdateState, row, 0, 1, 3)
         
+        #^====================== manual command group
         manual_group = QGroupBox("Manual Command")
         manual_layout = QGridLayout()
         manual_group.setLayout(manual_layout)
@@ -375,7 +376,7 @@ class TargetWheelControl(QWidget):
         manual_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
 
 
-        ########### Spinning Control Group
+        #&########## Spinning Control Group
         self.spin_group = QGroupBox("Spinning Control")
         spin_layout = QGridLayout()
         self.spin_group.setLayout(spin_layout)
@@ -423,7 +424,7 @@ class TargetWheelControl(QWidget):
         self.bnSpinStop.clicked.connect(self.StopSpin)
         self.bnSpinStop.setEnabled(False)
  
-        ########### Sweeper Control Group
+        #&########## Sweeper Control Group
         self.sweep_group = QGroupBox("Veto Sweeper Control")
         sweep_layout = QGridLayout()
         self.sweep_group.setLayout(sweep_layout)
@@ -497,7 +498,7 @@ class TargetWheelControl(QWidget):
         self.sweepStop.clicked.connect(self.StopSweep)
         sweep_layout.addWidget(self.sweepStop, row, 0, 1, 2)
 
-        ############## QX4 group layout
+        #&############# QX4 group layout
         self.qx4_group = QGroupBox("QX4 Lock Control")
         qx4_layout = QGridLayout()
         self.qx4_group.setLayout(qx4_layout)
@@ -697,12 +698,17 @@ class TargetWheelControl(QWidget):
             self.statusTorque.setText(f"{self.controller.torque:.2f}")
             
             #=== QX4
+            self.UpdateQX4Parameters()
+
+
+    def UpdateQX4Parameters(self):
+        if self.controller.connected and self.controller.isQX4Updated:
             self.qx4SetPos.setText(f"{self.controller.qx4EncoderDemandPos}")
             self.qx4UpdateInterval.setText(f"{self.controller.qx4ControUpdate}")
             self.qx4SlewSpeed.setText(f"{self.controller.qx4SlewSpeed}")
             self.qx4ServoSpeed.setText(f"{self.controller.qx4ServoSlewSpeed}")
             self.qx4MotorPos.setText(f"{self.controller.qx4MotorDemandPos}")
-
+            self.controller.isQX4Updated = False
 
     def UpdateOtherStatus(self):
         if self.controller.connected:
@@ -1220,10 +1226,13 @@ class TargetWheelControl(QWidget):
                 self.setEnableSpinControl(False)
                 self.setEnableSweepControl(False)
                 self.setEnableTargetControl(False)
-                self.setEnableQX4Control(False, True)
+                # self.setEnableQX4Control(False, True)
 
                 self.qx4_button.setStyleSheet("background-color: green")
                 self.controller.startQX4LockPosition()
+
+                time.sleep(0.5)  # Wait a bit to ensure the command is processed
+                self.UpdateQX4Parameters()
 
             else:
                 print("QX4 Lock Position Disengaged.")
@@ -1236,7 +1245,7 @@ class TargetWheelControl(QWidget):
                 self.setEnableSpinControl(True)
                 self.setEnableSweepControl(True)
                 self.setEnableTargetControl(True)
-                self.setEnableQX4Control(True)
+                # self.setEnableQX4Control(True)
 
                 self.UpdateButtonsColor()            
 

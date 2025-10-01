@@ -44,6 +44,7 @@ class Controller():
         self.torque_ref = 0.0 # inital value of the torque
 
         #QX4 parameters
+        self.isQX4Updated = False
         self.qx4EncoderDemandPos = 0   # R6
         self.qx4ControUpdate = 0 # 100 us/ unit, R7
         self.qx4SlewSpeed = 0 # in 0.25 rpm /unit, R8
@@ -147,6 +148,7 @@ class Controller():
             self.qx4SlewSpeed = int(self.queryNumber('RU81',False)) # in 0.25 rpm /unit, R8    
             self.qx4ServoSlewSpeed = int(self.queryNumber('RU91',False)) # in 0.25 rpm /unit, R9
             self.qx4MotorDemandPos = int(self.queryNumber('RU;1',False)) #
+            self.isQX4Updated = True
 
     def setSweepMask(self, mask : int):
         if self.connected:
@@ -303,10 +305,20 @@ class Controller():
         else:
             return math.nan
 
+    def getQX4Parameters(self):
+        self.qx4EncoderDemandPos = int(self.queryNumber('RU61',False)) # R6
+        self.qx4ControUpdate = int(self.queryNumber('RU71',False)) # 100 us/ unit, R7
+        self.qx4SlewSpeed = int(self.queryNumber('RU81',False)) # in 0.25 rpm /unit, R8    
+        self.qx4ServoSlewSpeed = int(self.queryNumber('RU91',False)) # in 0.25 rpm /unit, R9
+        self.qx4MotorDemandPos = int(self.queryNumber('RU;1',False)) #
+        self.isQX4Updated = True
+
     def startQX4LockPosition(self):
         if self.connected:
             print("Starting QX4 Lock Position...")
             self.send_message('QX4')
+            time.sleep(0.1)
+            self.getQX4Parameters()
 
     def stopQX4LockPosition(self):
         if self.connected:
@@ -454,11 +466,11 @@ class Controller():
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
             'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
-            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1'
+            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
-            'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS', "QX1", "QX4",
+            'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS', 'QX1',
             'RL6', 'RL7', 'RL8', 'RL9'
         ]
 
