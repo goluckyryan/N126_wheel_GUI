@@ -21,6 +21,8 @@ class Controller():
 
         self.commandMode = None
 
+        self.io_status = 0
+
         self.maxAccel = 0.0 # rev/sec/sec
         self.accelRate = 0.0 # rev/sec/sec
         self.velocity = 0.0     # rev/sec
@@ -107,6 +109,10 @@ class Controller():
         if self.connected and self.isSpinning == False:
             print(f"Setting encoder position to {position}...")
             self.send_message(f'EP{position}')
+
+    def getIOStatus(self):
+        if self.connected:
+            self.io_status = int(self.queryNumber('IO', False)) & 0xFF # 8-bit status
             
     def getStatus(self):
         if self.connected:
@@ -150,6 +156,9 @@ class Controller():
             self.qx4MotorDemandPos = int(self.queryNumber('RU;1',False)) #
             self.isQX4Updated = True
 
+            self.getIOStatus()
+            self.getQX4Parameters()
+
     def setSweepMask(self, mask : int):
         if self.connected:
             self.sweepMask = mask
@@ -176,11 +185,12 @@ class Controller():
             print("Starting spin sweep...")
             self.send_message('QX1')
             self.isSpinning = True
+
     def stopSpinSweep(self):
         if self.connected:
             print("Stopping spin sweep...")
-            self.send_message('SK')
-            self.isSpinning = False
+            self.setSweepSpeed(0)
+            # self.send_message('SK')
 
     def getPosition(self, outputMsg=True):
         if self.connected:
@@ -324,6 +334,7 @@ class Controller():
         if self.connected:
             print("Stopping QX4 Lock Position...")
             self.send_message('SK')
+            self.getQX4Parameters()
 
     #======= move out from Controller to GUI, because there is no position feedback here =======
     # def gotoPosition(self, position):
@@ -468,7 +479,7 @@ class Controller():
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
             'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
-            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4'
+            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4', 'IO'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',

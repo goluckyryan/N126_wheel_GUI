@@ -19,7 +19,7 @@ NTARGET = 16
 DAEFUL_POS_UPDATE_INTERVAL = 1000  # milliseconds
 
 
-class CustomButton(QPushButton):
+class TargetButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
         self.isChangeNameMode = False
@@ -87,11 +87,7 @@ class TargetWheelControl(QWidget):
         else:
             self.save_targets_info()
         self.Save_program_settings()
-        self.controller.stopSpin()
-        self.controller.stopSpinSweep()
-        if self.bnLockPos.styleSheet() != "":
-            self.LockPosition()  # unlock position
-
+        self.controller.send_message("SK")
         self.controller.disconnect()
         event.accept()  # Optional: confirm you want to close
         print("============= Program Ended.")
@@ -119,7 +115,7 @@ class TargetWheelControl(QWidget):
             row += 1
             target_layout.addWidget(QLabel(str(i)), row, 0)
             
-            btn = CustomButton(self.target_names[i])
+            btn = TargetButton(self.target_names[i])
             btn.clicked.connect(lambda _, idx=i: self.Target_picked(idx))
             self.target_buttons.append(btn)
             target_layout.addWidget(btn, row, 1, 1, 4)
@@ -332,7 +328,14 @@ class TargetWheelControl(QWidget):
         self.bnUpdateState = QPushButton("Update Status")
         self.bnUpdateState.clicked.connect(self.Update_Status)
         status_layout.addWidget(self.bnUpdateState, row, 0, 1, 3)
-        
+
+        row += 1
+        status_layout.addWidget(QLabel("IO Status : "), row, 0)
+        self.ioStatus = QLineEdit()
+        self.ioStatus.setReadOnly(True)
+        self.ioStatus.setStyleSheet("background-color : lightgray")
+        status_layout.addWidget(self.ioStatus, row, 1, 1, 2)
+
 
         #&########## manual command group
         self.manual_group = QGroupBox("Manual Command")
@@ -451,11 +454,11 @@ class TargetWheelControl(QWidget):
         sweep_layout.addWidget(self.spSweepCutOff, row, 1, 1, 1)
  
         row += 1
-        direction_label = QLabel("Only Positive Direction")
+        self.direction_label = QLabel("Only Positive Direction")
         # direction_label.setStyleSheet("color: blue; font-weight: bold;")
-        direction_label.setStyleSheet("color: blue;")
-        direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sweep_layout.addWidget(direction_label, row, 0, 1, 2)
+        self.direction_label.setStyleSheet("color: blue;")
+        self.direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sweep_layout.addWidget(self.direction_label, row, 0, 1, 2)
 
 
         row += 1
@@ -474,8 +477,8 @@ class TargetWheelControl(QWidget):
         ################################# Add groups to main layout
         main_layout.addWidget(          target_group, 0, 0, 6, 2)
 
-        main_layout.addWidget(     self.status_group, 0, 2, 4, 1)
-        main_layout.addWidget(     self.manual_group, 4, 2, 2, 1)
+        main_layout.addWidget(     self.status_group, 0, 2, 5, 1)
+        main_layout.addWidget(     self.manual_group, 5, 2, 1, 1)
 
         main_layout.addWidget(          server_group, 0, 3, 1, 1)
         main_layout.addWidget(       self.spin_group, 1, 3, 2, 1)
@@ -615,10 +618,12 @@ class TargetWheelControl(QWidget):
             self.statusTorque.setText(f"{self.controller.torque:.2f}")
             
             #=== QX4
-            self.UpdateQX4Parameters()
+            self.UpdateQX4ParametersFromMemory()
 
+            #=== IO status
+            self.ioStatus.setText(bin(int(self.controller.io_status)))
 
-    def UpdateQX4Parameters(self):
+    def UpdateQX4ParametersFromMemory(self):
         if self.controller.connected and self.controller.isQX4Updated:
             self.qx4SetPos.setText(f"{self.controller.qx4EncoderDemandPos}")
             self.qx4UpdateInterval.setText(f"{self.controller.qx4ControUpdate}")
@@ -662,14 +667,16 @@ class TargetWheelControl(QWidget):
         if self.pauseUpdate == False:
             if self.askPosFromEncoder:
                 self.controller.getPosition(False)
+                self.controller.getIOStatus()
             self.EncoderPos.setText(f"{self.controller.position}") 
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
+            self.UpdateOtherStatus()
             #if ModPos is close to a target, change the button color
             self.UpdateButtonsColor()
-            
-            self.UpdateOtherStatus()
+            # self.UpdateStateButtons()
+
             QApplication.processEvents()  # Process events to update the UI
 
 
@@ -799,11 +806,23 @@ class TargetWheelControl(QWidget):
 
     def SetPosition(self, id):
         # print(f"Set Position for Target {id}: {self.target_pos[id].text()}")
-        self.target_rev[id].setText(str(int(self.target_pos[id].text()) / STEP_PER_REVOLUTION))
+        if self.target_pos[id].text().isdigit():
+            pos = int(self.target_pos[id].text())
+            self.target_rev[id].setText(f"{pos / STEP_PER_REVOLUTION:.2f}")
 
-        if self.isQX4Locking :
-            self.qx4SetPos.setText(f"{self.target_pos[id].text()}")
-            self.controller.setQX4EncoderDemandPos(int(self.target_pos[id].text()))
+            for i in range(NTARGET):
+                if i == 0:
+                    continue
+                idx = (id + i) % NTARGET
+                pp = pos + STEP_PER_REVOLUTION/NTARGET * i
+                if pp >= STEP_PER_REVOLUTION:
+                    pp -= STEP_PER_REVOLUTION
+                self.target_pos[idx].setText(f"{int(pp)}")
+                self.target_rev[idx].setText(f"{pp / STEP_PER_REVOLUTION:.2f}")
+
+            if self.isQX4Locking :
+                self.qx4SetPos.setText(f"{pos}")
+                self.controller.setQX4EncoderDemandPos(int(pos))
 
     def Sweep_picked(self, id):
         self.timer.stop()  # Stop the timer to prevent updates during sweep selection
@@ -858,7 +877,7 @@ class TargetWheelControl(QWidget):
                 self.isQX4Locking = True
 
                 time.sleep(0.5)  # Wait a bit to ensure the command is processed
-                self.UpdateQX4Parameters()
+                self.UpdateQX4ParametersFromMemory()
 
                 self.SetEnableGeneralControl(False)
                 self.setEnableSpinControl(False)
@@ -870,6 +889,7 @@ class TargetWheelControl(QWidget):
                 self.isQX4Locking = False
             
                 self.bnLockPos.setStyleSheet("")
+                self.UpdateQX4ParametersFromMemory()
 
                 self.SetEnableGeneralControl(True)
                 self.setEnableSpinControl(True)
@@ -910,12 +930,31 @@ class TargetWheelControl(QWidget):
             self.controller.send_message("DI100")
             self.controller.startSpinSweep()
         
-            self.updateTimeInterval = 500 
+            self.updateTimeInterval = 300 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
 
     def StopSweep(self):
         if self.controller.connected:
+            self.controller.stopSpinSweep()
+
+            self.direction_label.setText("Stopping... Please wait")
+            self.direction_label.setStyleSheet("color: red;")
+
+            while True:
+                status = int(self.controller.io_status) & 0b111
+                if status  == 7:  # 00000111 in decimal
+                    self.controller.isSpinning = False
+                    break
+                time.sleep(0.3)
+                QApplication.processEvents()  # Process events to update the UI
+
+            self.controller.send_message("SK") 
+            self.direction_label.setStyleSheet("color: blue;")
+            self.direction_label.setText("Only Positive Direction")
+
+            self.Update_Status()
+
             self.SetEnableGeneralControl(True)
             self.setEnableSpinControl(True)
             self.setEnableSweepControl(True, True)
@@ -925,13 +964,12 @@ class TargetWheelControl(QWidget):
                 self.target_buttons[i].setEnabled(True)
                 self.target_pos[i].setEnabled(True)
 
-            self.controller.stopSpinSweep()
-
             self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
 
             self.UpdateButtonsColor()
+
 
 
     #======================================================================================== Spin Control
