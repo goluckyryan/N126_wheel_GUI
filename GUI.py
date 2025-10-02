@@ -672,6 +672,8 @@ class TargetWheelControl(QWidget):
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
+            self.ioStatus.setText(bin(int(self.controller.io_status)))
+
             self.UpdateOtherStatus()
             #if ModPos is close to a target, change the button color
             self.UpdateButtonsColor()
@@ -904,6 +906,12 @@ class TargetWheelControl(QWidget):
         if self.enableSignals:
             self.controller.setSpokeOffset(self.spSpokeWidth.value())
 
+            #cal the maximum speed allowed
+            maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
+            maxSpeed2 = 60. / 0.0048 * (1 - (self.spSpokeWidth.value() / 512))
+            maxSpeed = min(maxSpeed1, maxSpeed2)
+            self.spSweepSpeed.setMaximum(maxSpeed)
+
     def SetSweepSpeed(self):
         if self.enableSignals:
             self.controller.setSweepSpeed( self.spSweepSpeed.value())
@@ -941,8 +949,13 @@ class TargetWheelControl(QWidget):
             self.direction_label.setText("Stopping... Please wait")
             self.direction_label.setStyleSheet("color: red;")
 
+            self.timer.stop() 
+
             while True:
+                self.Update_Position()
                 status = int(self.controller.io_status) & 0b111
+                print(f"Waiting for sweep to stop... IO status: {status:03b}")
+
                 if status  == 7:  # 00000111 in decimal
                     self.controller.isSpinning = False
                     break

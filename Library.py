@@ -113,6 +113,7 @@ class Controller():
     def getIOStatus(self):
         if self.connected:
             self.io_status = int(self.queryNumber('IO', False)) & 0xFF # 8-bit status
+            # print(f"IO Status: {self.io_status:08b}")
             
     def getStatus(self):
         if self.connected:
@@ -131,7 +132,7 @@ class Controller():
             self.moveDistance = float(self.queryNumber('DI',False)) # steps
 
             self.sweepMask = int(self.queryNumber('RU11',False)) # sweep bit
-            self.spokeWidth = int(self.queryNumber('RU21',False)) 
+            self.spokeWidth = int(self.queryNumber('RU21',False))  # spoke with in steps
             self.spokeOffset = int(self.queryNumber('RU31',False)) 
             self.sweepSpeed = int(self.queryNumber('RU41',False)) / 4.#  rpm
             self.sweepCutOff = int(self.queryNumber('RU51',False)) / 4. #  rpm
