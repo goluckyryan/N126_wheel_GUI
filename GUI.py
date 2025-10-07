@@ -411,22 +411,22 @@ class TargetWheelControl(QWidget):
         sweep_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
-        self.spSweepWidth = QDoubleSpinBox()
-        self.spSweepWidth.setDecimals(0)
-        self.spSweepWidth.setSingleStep(1)
-        self.spSweepWidth.setRange(0, 512)
-        self.spSweepWidth.valueChanged.connect(self.SetSpokeWidth)
-        sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
-        sweep_layout.addWidget(self.spSweepWidth, row, 1, 1, 1)
-
-        row += 1
         self.spSpokeWidth = QDoubleSpinBox()
         self.spSpokeWidth.setDecimals(0)
         self.spSpokeWidth.setSingleStep(1)
-        self.spSpokeWidth.setRange(0, 511)
-        self.spSpokeWidth.valueChanged.connect(self.SetSpokeOffset)
-        sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
+        self.spSpokeWidth.setRange(0, 512)
+        self.spSpokeWidth.valueChanged.connect(self.SetSpokeWidth)
+        sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
         sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
+
+        row += 1
+        self.spSpokeOffset = QDoubleSpinBox()
+        self.spSpokeOffset.setDecimals(0)
+        self.spSpokeOffset.setSingleStep(1)
+        self.spSpokeOffset.setRange(-STEP_PER_REVOLUTION, STEP_PER_REVOLUTION )
+        self.spSpokeOffset.valueChanged.connect(self.SetSpokeOffset)
+        sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
+        sweep_layout.addWidget(self.spSpokeOffset, row, 1, 1, 1)
  
         row += 1
         self.spSweepSpeed = QDoubleSpinBox()
@@ -535,7 +535,7 @@ class TargetWheelControl(QWidget):
         if myself:
             self.sweepStop.setEnabled(not enable)
         else:
-            self.spSweepWidth.setEnabled(enable)
+            self.spSpokeWidth.setEnabled(enable)
             self.spSpokeWidth.setEnabled(enable)
             self.spSweepSpeed.setEnabled(enable)
             self.spSweepCutOff.setEnabled(enable)
@@ -596,8 +596,8 @@ class TargetWheelControl(QWidget):
             self.UpdateButtonsColor()
 
             #==== sweep parameters
-            self.spSweepWidth.setValue(self.controller.spokeOffset)
             self.spSpokeWidth.setValue(self.controller.spokeWidth)
+            self.spSpokeOffset.setValue(self.controller.spokeOffset)
             self.spSweepSpeed.setValue(self.controller.sweepSpeed)
             self.statusSweepSpeed.setText(f"{self.controller.sweepSpeed/60.:.1f}")
             self.spSweepCutOff.setValue(self.controller.sweepCutOff)
@@ -622,6 +622,24 @@ class TargetWheelControl(QWidget):
 
             #=== IO status
             self.ioStatus.setText(bin(int(self.controller.io_status)))
+
+            #=== FW program status
+            fw_status = self.controller.FWprogram
+
+            if fw_status > 0 and fw_status < 4: # QX1 is running, i.e. the sweeping is on
+                print("QX1 sweeping is running.")
+                self.SetEnableGeneralControl(False)
+                self.setEnableSpinControl(False)
+                self.setEnableSweepControl(False, True)
+                self.setEnableTargetControl(False)
+
+                self.updateTimeInterval = 300  # milliseconds
+                self.timer.stop()
+                self.timer.start(self.updateTimeInterval)
+
+            if fw_status == 4: # QX4 is running, i.e. the position locking is on
+                print("QX4 position locking is running. kill it.")
+                self.controller.stopQX4LockPosition()
 
     def UpdateQX4ParametersFromMemory(self):
         if self.controller.connected and self.controller.isQX4Updated:
@@ -900,17 +918,16 @@ class TargetWheelControl(QWidget):
     #======================================================================================== Sweep Control
     def SetSpokeWidth(self):
         if self.enableSignals:
-            self.controller.setSpokeWidth(self.spSweepWidth.value())
+            self.controller.setSpokeWidth(self.spSpokeWidth.value())
+            #cal the maximum speed allowed
+            maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
+            maxSpeed2 = 60. / 0.0044 * (1 - (self.spSpokeWidth.value() / 512))
+            maxSpeed = min(maxSpeed1, maxSpeed2)
+            self.spSweepSpeed.setMaximum(maxSpeed)
 
     def SetSpokeOffset(self):
         if self.enableSignals:
             self.controller.setSpokeOffset(self.spSpokeWidth.value())
-
-            #cal the maximum speed allowed
-            maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
-            maxSpeed2 = 60. / 0.0048 * (1 - (self.spSpokeWidth.value() / 512))
-            maxSpeed = min(maxSpeed1, maxSpeed2)
-            self.spSweepSpeed.setMaximum(maxSpeed)
 
     def SetSweepSpeed(self):
         if self.enableSignals:
@@ -952,17 +969,27 @@ class TargetWheelControl(QWidget):
             self.timer.stop() 
 
             while True:
+                old_velocity = self.controller.encoderVelocity
                 self.Update_Position()
+                new_velocity = self.controller.encoderVelocity
                 status = int(self.controller.io_status) & 0b111
                 print(f"Waiting for sweep to stop... IO status: {status:03b}")
-
+                    
                 if status  == 7:  # 00000111 in decimal
                     self.controller.isSpinning = False
                     break
+
+                if new_velocity > 1 and abs(new_velocity - old_velocity) < 0.1:
+                    print("Velocity not changing, forcing stop.")
+                    break
+
                 time.sleep(0.3)
                 QApplication.processEvents()  # Process events to update the UI
 
             self.controller.send_message("SK") 
+            self.controller.send_message('IO7')
+            self.controller.send_message('RLO0') 
+
             self.direction_label.setStyleSheet("color: blue;")
             self.direction_label.setText("Only Positive Direction")
 

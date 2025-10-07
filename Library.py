@@ -22,6 +22,7 @@ class Controller():
         self.commandMode = None
 
         self.io_status = 0
+        self.FWprogram = 0
 
         self.maxAccel = 0.0 # rev/sec/sec
         self.accelRate = 0.0 # rev/sec/sec
@@ -114,7 +115,11 @@ class Controller():
         if self.connected:
             self.io_status = int(self.queryNumber('IO', False)) & 0xFF # 8-bit status
             # print(f"IO Status: {self.io_status:08b}")
-            
+
+    def getFirmwareProgramStatus(self):
+        if self.connected:
+            self.FWprogram = int(self.queryNumber('RUp1', False))
+
     def getStatus(self):
         if self.connected:
             self.commandMode = self.queryNumber('CM', False)
@@ -159,6 +164,7 @@ class Controller():
 
             self.getIOStatus()
             self.getQX4Parameters()
+            self.getFirmwareProgramStatus()
 
     def setSweepMask(self, mask : int):
         if self.connected:
@@ -184,6 +190,14 @@ class Controller():
     def startSpinSweep(self):
         if self.connected:
             print("Starting spin sweep...")
+
+            self.send_message('RMNO') #holding motor current
+            time.sleep(0.1)
+            self.send_message('RLO0') #release the motor?
+
+            self.getTorque()
+            self.torque_ref = self.torque # set the current torque as the reference
+        
             self.send_message('QX1')
             self.isSpinning = True
 
@@ -335,6 +349,8 @@ class Controller():
         if self.connected:
             print("Stopping QX4 Lock Position...")
             self.send_message('SK')
+            self.send_message('IO7')
+            self.send_message('RLO0') 
             self.getQX4Parameters()
 
     #======= move out from Controller to GUI, because there is no position feedback here =======
@@ -480,12 +496,12 @@ class Controller():
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
             'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
-            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4', 'IO'
+            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4', 'IO', 'RMNO'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
             'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS', 'QX1',
-            'RL6', 'RL7', 'RL8', 'RL9'
+            'RL6', 'RL7', 'RL8', 'RL9', 'IO', 'RLO', 'RUp', 'IO'
         ]
 
         for valid_message in validReadMassages:
