@@ -88,6 +88,8 @@ class TargetWheelControl(QWidget):
             self.save_targets_info()
         self.Save_program_settings()
         self.controller.send_message("SK")
+        self.controller.send_message('IO7')
+        self.controller.send_message('RLO0') 
         self.controller.disconnect()
         event.accept()  # Optional: confirm you want to close
         print("============= Program Ended.")
@@ -971,6 +973,7 @@ class TargetWheelControl(QWidget):
 
     def StopSweep(self):
         if self.controller.connected:
+            origin_speed = self.controller.sweepSpeed
             self.controller.stopSpinSweep()
 
             self.direction_label.setText("Stopping... Please wait")
@@ -999,6 +1002,8 @@ class TargetWheelControl(QWidget):
             self.controller.send_message("SK") 
             self.controller.send_message('IO7')
             self.controller.send_message('RLO0') 
+            #restore the original speed
+            self.controller.setSweepSpeed(origin_speed)
 
             self.direction_label.setStyleSheet("color: blue;")
             self.direction_label.setText("Only Positive Direction")
