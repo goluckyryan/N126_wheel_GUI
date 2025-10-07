@@ -414,7 +414,7 @@ class TargetWheelControl(QWidget):
         self.spSpokeWidth = QDoubleSpinBox()
         self.spSpokeWidth.setDecimals(0)
         self.spSpokeWidth.setSingleStep(1)
-        self.spSpokeWidth.setRange(0, 512)
+        self.spSpokeWidth.setRange(0, 511)
         self.spSpokeWidth.valueChanged.connect(self.SetSpokeWidth)
         sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
         sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
@@ -601,6 +601,8 @@ class TargetWheelControl(QWidget):
             self.spSweepSpeed.setValue(self.controller.sweepSpeed)
             self.statusSweepSpeed.setText(f"{self.controller.sweepSpeed/60.:.1f}")
             self.spSweepCutOff.setValue(self.controller.sweepCutOff)
+
+            self.SetMaxSweepSpeed()
 
             #=== sweep mask
             for i in range(NTARGET):
@@ -916,14 +918,22 @@ class TargetWheelControl(QWidget):
                 self.setEnableSweepControl(True)
 
     #======================================================================================== Sweep Control
+    def SetMaxSweepSpeed(self):
+        #cal the maximum speed allowed
+        maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
+        maxSpeed2 = 60. / 0.0044 * (self.spSpokeWidth.value() / 512)
+        maxSpeed = min(maxSpeed1, maxSpeed2)
+
+        # Make maxSpeed divisible by 0.25
+        maxSpeed = math.floor(maxSpeed / 0.25) * 0.25
+        self.spSweepSpeed.setMaximum(maxSpeed)
+        print(f"Spoke Width set to {self.spSpokeWidth.value():.0f}, max sweep speed: {maxSpeed:.2f} rpm")
+
+
     def SetSpokeWidth(self):
         if self.enableSignals:
             self.controller.setSpokeWidth(self.spSpokeWidth.value())
-            #cal the maximum speed allowed
-            maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
-            maxSpeed2 = 60. / 0.0044 * (1 - (self.spSpokeWidth.value() / 512))
-            maxSpeed = min(maxSpeed1, maxSpeed2)
-            self.spSweepSpeed.setMaximum(maxSpeed)
+            self.SetMaxSweepSpeed()
 
     def SetSpokeOffset(self):
         if self.enableSignals:
@@ -969,9 +979,9 @@ class TargetWheelControl(QWidget):
             self.timer.stop() 
 
             while True:
-                old_velocity = self.controller.encoderVelocity
+                old_velocity = self.controller.motorVelocity
                 self.Update_Position()
-                new_velocity = self.controller.encoderVelocity
+                new_velocity = self.controller.motorVelocity
                 status = int(self.controller.io_status) & 0b111
                 print(f"Waiting for sweep to stop... IO status: {status:03b}")
                     
