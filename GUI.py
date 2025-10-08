@@ -939,7 +939,7 @@ class TargetWheelControl(QWidget):
 
     def SetSpokeOffset(self):
         if self.enableSignals:
-            self.controller.setSpokeOffset(self.spSpokeWidth.value())
+            self.controller.setSpokeOffset(self.spSpokeOffset.value())
 
     def SetSweepSpeed(self):
         if self.enableSignals:
