@@ -155,13 +155,6 @@ class Controller():
                 self.sweepSpeed = 6.0
                 self.setSweepSpeed(6.0)
 
-            self.qx4EncoderDemandPos = int(self.queryNumber('RU61',False)) # R6
-            self.qx4ControUpdate = int(self.queryNumber('RU71',False)) # 100 us/ unit, R7
-            self.qx4SlewSpeed = int(self.queryNumber('RU81',False)) # in 0.25 rpm /unit, R8    
-            self.qx4ServoSlewSpeed = int(self.queryNumber('RU91',False)) # in 0.25 rpm /unit, R9
-            self.qx4MotorDemandPos = int(self.queryNumber('RU;1',False)) #
-            self.isQX4Updated = True
-
             self.getIOStatus()
             self.getQX4Parameters()
             self.getFirmwareProgramStatus()
@@ -197,7 +190,8 @@ class Controller():
 
             self.getTorque()
             self.torque_ref = self.torque # set the current torque as the reference
-        
+            self.torque = self.torque - self.torque_ref
+
             self.send_message('QX1')
             self.isSpinning = True
 
@@ -331,11 +325,14 @@ class Controller():
             return math.nan
 
     def getQX4Parameters(self):
-        self.qx4EncoderDemandPos = int(self.queryNumber('RU61',False)) # R6
-        self.qx4ControUpdate = int(self.queryNumber('RU71',False)) # 100 us/ unit, R7
-        self.qx4SlewSpeed = int(self.queryNumber('RU81',False)) # in 0.25 rpm /unit, R8    
-        self.qx4ServoSlewSpeed = int(self.queryNumber('RU91',False)) # in 0.25 rpm /unit, R9
-        self.qx4MotorDemandPos = int(self.queryNumber('RU;1',False)) #
+        if not self.connected:
+            return
+    
+        self.qx4EncoderDemandPos = float(self.queryNumber('RU61',False)) # R6
+        self.qx4ControUpdate = float(self.queryNumber('RU71',False)) # 100 us/ unit, R7
+        self.qx4SlewSpeed = float(self.queryNumber('RU81',False)) # in 0.25 rpm /unit, R8    
+        self.qx4ServoSlewSpeed = float(self.queryNumber('RU91',False)) # in 0.25 rpm /unit, R9
+        self.qx4MotorDemandPos = float(self.queryNumber('RU;1',False)) #
         self.isQX4Updated = True
 
     def startQX4LockPosition(self):

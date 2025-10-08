@@ -70,11 +70,13 @@ class TargetWheelControl(QWidget):
         self.init_ui()
 
         self.Load_program_setting()
-        self.Connect_Server()
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Position)
         self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL  # milliseconds
+
+        self.Connect_Server()
+
         self.timer.start(self.updateTimeInterval) 
         self.pauseUpdate = False
         self.askPosFromEncoder = True
@@ -637,6 +639,7 @@ class TargetWheelControl(QWidget):
                 self.setEnableSweepControl(False, True)
                 self.setEnableTargetControl(False)
 
+                
                 self.updateTimeInterval = 300  # milliseconds
                 self.timer.stop()
                 self.timer.start(self.updateTimeInterval)
