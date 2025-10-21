@@ -127,11 +127,12 @@ class TargetWheelControl(QWidget):
             le = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i))
             le.returnPressed.connect(lambda idx=i: self.SetPosition(idx))
             self.target_pos.append(le)
+            le.setReadOnly(True)
             target_layout.addWidget(le, row, 5, 1, 2)
 
             le2 = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i/STEP_PER_REVOLUTION))
             le2.setReadOnly(True)
-            le2.setEnabled(False)
+            # le2.setEnabled(False)
             self.target_rev.append(le2)
             target_layout.addWidget(le2, row, 7, 1, 1)
             
@@ -294,10 +295,10 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(self.bnSeekHome, row, 0, 1, 3)
         self.bnSeekHome.clicked.connect(self.SeekHome)
 
-        row += 1
-        self.bnZeroEncoderPosition = QPushButton("Zero Encoder Position")
-        status_layout.addWidget(self.bnZeroEncoderPosition, row, 0, 1, 3)
-        self.bnZeroEncoderPosition.clicked.connect(self.ZeroEncoderPosition)
+        # row += 1
+        # self.bnZeroEncoderPosition = QPushButton("Zero Encoder Position")
+        # status_layout.addWidget(self.bnZeroEncoderPosition, row, 0, 1, 3)
+        # self.bnZeroEncoderPosition.clicked.connect(self.ZeroEncoderPosition)
 
         row += 1
         status_layout.addWidget(QLabel("Controller Temp. [C] : "), row, 0)
@@ -369,18 +370,18 @@ class TargetWheelControl(QWidget):
         row = 0
         self.spSpinSpeed = QDoubleSpinBox()
         self.spSpinSpeed.setDecimals(2)
-        self.spSpinSpeed.setSingleStep(0.1)
-        self.spSpinSpeed.setRange(0.0042, 80.0)
-        spin_layout.addWidget(QLabel("Spin Speed [r/s] : "), row, 0)
+        self.spSpinSpeed.setSingleStep(1.0)
+        self.spSpinSpeed.setRange(0.0042/60., 1300.0)
+        spin_layout.addWidget(QLabel("Spin Speed [rpm] : "), row, 0)
         spin_layout.addWidget(self.spSpinSpeed, row, 1, 1, 2)
         self.spSpinSpeed.valueChanged.connect(self.SetSpinSpeed)
 
-        row += 1
-        spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
-        self.statusSpinSpeed = QLineEdit()
-        self.statusSpinSpeed.setReadOnly(True)
-        self.statusSpinSpeed.setStyleSheet("background-color : lightgray")
-        spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
+        # row += 1
+        # spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
+        # self.statusSpinSpeed = QLineEdit()
+        # self.statusSpinSpeed.setReadOnly(True)
+        # self.statusSpinSpeed.setStyleSheet("background-color : lightgray")
+        # spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
 
         row += 1
         self.spSpinAccel = QDoubleSpinBox()
@@ -523,7 +524,7 @@ class TargetWheelControl(QWidget):
         self.spDeccel.setEnabled(enable)
         self.spSpeed.setEnabled(enable)
         self.bnSeekHome.setEnabled(enable)
-        self.bnZeroEncoderPosition.setEnabled(enable)
+        # self.bnZeroEncoderPosition.setEnabled(enable)
         self.bnUpdateState.setEnabled(enable)
 
     def setEnableSpinControl(self, enable, myself = False):
@@ -586,8 +587,8 @@ class TargetWheelControl(QWidget):
             self.spSpeed.setValue(self.controller.velocity)
             self.statusSpeed.setText(f"{self.controller.velocity*60:.1f}")
 
-            self.spSpinSpeed.setValue(self.controller.jogSpeed)
-            self.statusSpinSpeed.setText(f"{self.controller.jogSpeed*60:.1f}")
+            self.spSpinSpeed.setValue(self.controller.jogSpeed*60.)
+            # self.statusSpinSpeed.setText(f"{self.controller.jogSpeed*60:.1f}")
             self.spSpinAccel.setValue(self.controller.jogAccel)
             if self.controller.moveDistance >= 0 :
                 self.cbDirection.setCurrentIndex(0)  # Clockwise
@@ -605,6 +606,8 @@ class TargetWheelControl(QWidget):
             self.spSweepSpeed.setValue(self.controller.sweepSpeed)
             self.statusSweepSpeed.setText(f"{self.controller.sweepSpeed/60.:.1f}")
             self.spSweepCutOff.setValue(self.controller.sweepCutOff)
+
+            self.SetTargetPositionBaseOnSpokeOffset()
 
             self.SetMaxSweepSpeed()
 
@@ -943,6 +946,20 @@ class TargetWheelControl(QWidget):
     def SetSpokeOffset(self):
         if self.enableSignals:
             self.controller.setSpokeOffset(self.spSpokeOffset.value())
+            self.SetTargetPositionBaseOnSpokeOffset()
+
+    def SetTargetPositionBaseOnSpokeOffset(self):
+        offset = self.spSpokeOffset.value()
+        for i in range(NTARGET):
+            base_pos = int(STEP_PER_REVOLUTION/NTARGET * i)
+            new_pos = base_pos + offset - STEP_PER_REVOLUTION/ (2*NTARGET)
+            if new_pos < 0:
+                new_pos += STEP_PER_REVOLUTION
+            elif new_pos >= STEP_PER_REVOLUTION:
+                new_pos -= STEP_PER_REVOLUTION
+            self.target_pos[i].setText(f"{int(new_pos)}")
+            # print(f"Target {i} position set to {int(new_pos)} steps.")
+            self.target_rev[i].setText(f"{new_pos / STEP_PER_REVOLUTION:.2f}")
 
     def SetSweepSpeed(self):
         if self.enableSignals:
@@ -1034,9 +1051,9 @@ class TargetWheelControl(QWidget):
     def SetSpinSpeed(self):
         if self.enableSignals:
             speed = self.spSpinSpeed.value()
-            self.controller.setJogSpeed(speed)
-            self.statusSpinSpeed.setText(f"{speed*60:.1f}")
-            print(f"Spin Speed set to {speed:.2f} [r/s] = {speed*60:.1f} [rpm]")
+            self.controller.setJogSpeed(speed/60.)
+            # self.statusSpinSpeed.setText(f"{speed*60:.1f}")
+            print(f"Spin Speed set to {speed:.2f} [rpm] = {speed/60.:.1f} [r/s]")
 
     def SetSpinAccel(self):
         if self.enableSignals:

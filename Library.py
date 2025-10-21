@@ -104,6 +104,10 @@ class Controller():
             else:
                 self.send_message('DI-100') 
 
+            self.getTorque()
+            self.torque_ref = self.torque # set the current torque as the reference
+            self.torque = self.torque - self.torque_ref
+
             self.send_message('SHX0H') #seek home
             
     def setEncoderPosition(self, position):
