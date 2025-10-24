@@ -18,7 +18,6 @@ from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
 NTARGET = 16
 DAEFUL_POS_UPDATE_INTERVAL = 1000  # milliseconds
 
-
 class TargetButton(QPushButton):
     def __init__(self, text, parent=None):
         super().__init__(text, parent)
@@ -46,6 +45,29 @@ class TargetButton(QPushButton):
             self.isChangeNameMode = False
 
         super().mousePressEvent(event)
+
+
+class RDoubleSpinBox(QDoubleSpinBox):
+    returnPressed = pyqtSignal()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.valueChanged.connect(self.on_value_changed)
+
+        self.lineEdit().returnPressed.connect(self.on_return_Pressed)
+
+    def on_value_changed(self, value):
+        self.setStyleSheet("color: blue;")
+
+    def setValue(self, value: float) -> None:
+        self.blockSignals(True)
+        super().setValue(value)
+        self.setStyleSheet("color: black;")
+        self.blockSignals(False)
+
+    def on_return_Pressed(self):
+        self.returnPressed.emit()
+        self.setStyleSheet("color: black;")
+
 
 #########################################################################################################
 #########################################################################################################
@@ -258,20 +280,20 @@ class TargetWheelControl(QWidget):
 
         row += 1
         status_layout.addWidget(QLabel("Accel. [r/s^2] : "), row, 0)
-        self.spAccel = QDoubleSpinBox()
+        self.spAccel = RDoubleSpinBox()
         self.spAccel.setDecimals(3)
         self.spAccel.setSingleStep(0.001)
         self.spAccel.setRange(0.167, 1000.0)
-        self.spAccel.valueChanged.connect(self.SetAccel)
+        self.spAccel.returnPressed.connect(self.SetAccel)
         status_layout.addWidget(self.spAccel, row, 1, 1, 2)
 
         row += 1
         status_layout.addWidget(QLabel("Speed. [r/s] : "), row, 0)
-        self.spSpeed = QDoubleSpinBox()
+        self.spSpeed = RDoubleSpinBox()
         self.spSpeed.setDecimals(1)
         self.spSpeed.setSingleStep(0.1)
         self.spSpeed.setRange(0.0042, 80.0)
-        self.spSpeed.valueChanged.connect(self.SetSpeed)
+        self.spSpeed.returnPressed.connect(self.SetSpeed)
         status_layout.addWidget(self.spSpeed, row, 1, 1, 2)
 
         row += 1
@@ -283,11 +305,11 @@ class TargetWheelControl(QWidget):
 
         row += 1
         status_layout.addWidget(QLabel("Deaccel. [r/s^2] : "), row, 0)
-        self.spDeccel = QDoubleSpinBox()
+        self.spDeccel = RDoubleSpinBox()
         self.spDeccel.setDecimals(3)
         self.spDeccel.setSingleStep(0.001)
         self.spDeccel.setRange(0.167, 1000.0)
-        self.spDeccel.valueChanged.connect(self.SetDeaccel)
+        self.spDeccel.returnPressed.connect(self.SetDeaccel)
         status_layout.addWidget(self.spDeccel, row, 1, 1, 2)
 
         row += 1
@@ -368,13 +390,13 @@ class TargetWheelControl(QWidget):
         spin_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
-        self.spSpinSpeed = QDoubleSpinBox()
+        self.spSpinSpeed = RDoubleSpinBox()
         self.spSpinSpeed.setDecimals(2)
         self.spSpinSpeed.setSingleStep(1.0)
         self.spSpinSpeed.setRange(0.0042/60., 1300.0)
         spin_layout.addWidget(QLabel("Spin Speed [rpm] : "), row, 0)
         spin_layout.addWidget(self.spSpinSpeed, row, 1, 1, 2)
-        self.spSpinSpeed.valueChanged.connect(self.SetSpinSpeed)
+        self.spSpinSpeed.returnPressed.connect(self.SetSpinSpeed)
 
         # row += 1
         # spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
@@ -384,13 +406,13 @@ class TargetWheelControl(QWidget):
         # spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
 
         row += 1
-        self.spSpinAccel = QDoubleSpinBox()
+        self.spSpinAccel = RDoubleSpinBox()
         self.spSpinAccel.setDecimals(3)
         self.spSpinAccel.setSingleStep(0.1)
         self.spSpinAccel.setRange(0.167, 1000.0)
         spin_layout.addWidget(QLabel("Spin Accel. [r/s^2] : "), row, 0)
         spin_layout.addWidget(self.spSpinAccel, row, 1, 1, 2)
-        self.spSpinAccel.valueChanged.connect(self.SetSpinAccel)
+        self.spSpinAccel.returnPressed.connect(self.SetSpinAccel)
 
         row += 1
         self.cbDirection = QComboBox()
@@ -416,29 +438,29 @@ class TargetWheelControl(QWidget):
         sweep_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         row = 0
-        self.spSpokeWidth = QDoubleSpinBox()
+        self.spSpokeWidth = RDoubleSpinBox()
         self.spSpokeWidth.setDecimals(0)
         self.spSpokeWidth.setSingleStep(1)
         self.spSpokeWidth.setRange(0, 511)
-        self.spSpokeWidth.valueChanged.connect(self.SetSpokeWidth)
+        self.spSpokeWidth.returnPressed.connect(self.SetSpokeWidth)
         sweep_layout.addWidget(QLabel("Spoke Width : "), row, 0)
         sweep_layout.addWidget(self.spSpokeWidth, row, 1, 1, 1)
 
         row += 1
-        self.spSpokeOffset = QDoubleSpinBox()
+        self.spSpokeOffset = RDoubleSpinBox()
         self.spSpokeOffset.setDecimals(0)
         self.spSpokeOffset.setSingleStep(1)
         self.spSpokeOffset.setRange(-STEP_PER_REVOLUTION, STEP_PER_REVOLUTION )
-        self.spSpokeOffset.valueChanged.connect(self.SetSpokeOffset)
+        self.spSpokeOffset.returnPressed.connect(self.SetSpokeOffset)
         sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
         sweep_layout.addWidget(self.spSpokeOffset, row, 1, 1, 1)
  
         row += 1
-        self.spSweepSpeed = QDoubleSpinBox()
+        self.spSweepSpeed = RDoubleSpinBox()
         self.spSweepSpeed.setDecimals(2)
         self.spSweepSpeed.setSingleStep(0.25)
         self.spSweepSpeed.setRange(6.0, 1300)
-        self.spSweepSpeed.valueChanged.connect(self.SetSweepSpeed)
+        self.spSweepSpeed.returnPressed.connect(self.SetSweepSpeed)
         sweep_layout.addWidget(QLabel("Speed [rpm] : "), row, 0)
         sweep_layout.addWidget(self.spSweepSpeed, row, 1, 1, 1)
 
@@ -450,11 +472,11 @@ class TargetWheelControl(QWidget):
         sweep_layout.addWidget(self.statusSweepSpeed, row, 1, 1, 1)
  
         row += 1
-        self.spSweepCutOff = QDoubleSpinBox()
+        self.spSweepCutOff = RDoubleSpinBox()
         self.spSweepCutOff.setDecimals(2)
         self.spSweepCutOff.setSingleStep(0.25)
         self.spSweepCutOff.setRange(0.25, 1300)
-        self.spSweepCutOff.valueChanged.connect(self.SetSweepCutOff)
+        self.spSweepCutOff.returnPressed.connect(self.SetSweepCutOff)
         sweep_layout.addWidget(QLabel("Cut Off [rpm] : "), row, 0)
         sweep_layout.addWidget(self.spSweepCutOff, row, 1, 1, 1)
  
@@ -595,8 +617,6 @@ class TargetWheelControl(QWidget):
             else:
                 self.cbDirection.setCurrentIndex(1)
 
-            self.spSpinAccel.setStyleSheet("")
-
             #=== check current position and set the corresponding 
             self.UpdateButtonsColor()
 
@@ -606,7 +626,6 @@ class TargetWheelControl(QWidget):
             self.spSweepSpeed.setValue(self.controller.sweepSpeed)
             self.statusSweepSpeed.setText(f"{self.controller.sweepSpeed/60.:.1f}")
             self.spSweepCutOff.setValue(self.controller.sweepCutOff)
-
             self.SetTargetPositionBaseOnSpokeOffset()
 
             self.SetMaxSweepSpeed()
@@ -935,6 +954,7 @@ class TargetWheelControl(QWidget):
         # Make maxSpeed divisible by 0.25
         maxSpeed = math.floor(maxSpeed / 0.25) * 0.25
         self.spSweepSpeed.setMaximum(maxSpeed)
+        self.spSweepSpeed.setStyleSheet("color: black;")
         print(f"Spoke Width set to {self.spSpokeWidth.value():.0f}, max sweep speed: {maxSpeed:.2f} rpm")
 
 
