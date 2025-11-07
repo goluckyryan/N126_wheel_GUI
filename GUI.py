@@ -15,6 +15,11 @@ import time
 from Library import Controller, STEP_PER_REVOLUTION
 from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
 
+from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client.client.write_api import SYNCHRONOUS, ASYNCHRONOUS
+
+########################################################################################################
+
 NTARGET = 16
 DAEFUL_POS_UPDATE_INTERVAL = 1000  # milliseconds
 
@@ -86,6 +91,9 @@ class TargetWheelControl(QWidget):
         self.fileName = None
 
         self.button_clicked_id = None # which target button is clicked
+
+        self.influxToken = None
+        self.write_api = None
 
         self.controller = Controller()
 
@@ -241,12 +249,25 @@ class TargetWheelControl(QWidget):
         self.bnConnect = QPushButton("Connect")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
+        self.leinfluxAddress = QLineEdit()
+        self.leinfluxBucket = QLineEdit()
+        self.leinfluxOrg = QLineEdit()
+        self.leinfluxToken = QLineEdit()
+
         server_layout.addWidget(QLabel("IP :"), 0, 0)
         server_layout.addWidget(self.leIP, 0, 1, 1, 5)
         server_layout.addWidget(QLabel("Port :"), 1, 0)
         server_layout.addWidget(self.lePort, 1, 1, 1, 3)
         server_layout.addWidget(self.bnConnect, 1, 4, 1, 2)
 
+        server_layout.addWidget(QLabel("InfluxDB URL :"), 2, 0)
+        server_layout.addWidget(self.leinfluxAddress, 2, 1, 1, 5)
+        server_layout.addWidget(QLabel("Bucket :"), 3, 0)
+        server_layout.addWidget(self.leinfluxBucket, 3, 1, 1, 5)
+        server_layout.addWidget(QLabel("Org :"), 4, 0)
+        server_layout.addWidget(self.leinfluxOrg, 4, 1, 1, 5)
+        server_layout.addWidget(QLabel("Token File:"), 5, 0)
+        server_layout.addWidget(self.leinfluxToken, 5, 1, 1, 5)
 
         #&########## Status Group
         self.status_group = QGroupBox("General Control")
@@ -528,9 +549,43 @@ class TargetWheelControl(QWidget):
             self.fileNameLineEdit.setText(self.fileName)
             self.load_targets_info()
 
+            self.leinfluxAddress.setText(data["url"])
+            self.leinfluxBucket.setText(data["bucket"])
+            self.leinfluxOrg.setText(data["org"])
+            self.leinfluxToken.setText(data["token_file"])
+
+            token_file = data.get("token_file", "")
+            if token_file:
+                try:
+                    with open(token_file, "r") as tf:
+                        self.influxToken = tf.read().strip()
+                        print(f"Loaded InfluxDB token from '{token_file}'.")
+                except Exception as e:
+                    print(f"Could not read token file '{token_file}': {e}")
+                    self.influxToken = None
+                    self.leinfluxToken.setText("Fail to load token file.")
+            else:
+                self.influxToken = None
+                self.leinfluxToken.setText("No token file specified.")
+
+
+            if self.influxToken is not None:
+                self.write_client = InfluxDBClient(
+                    url=self.leinfluxAddress.text(),
+                    org=self.leinfluxOrg.text(),
+                    token = self.influxToken)
+                self.write_api = self.write_client.write_api(write_options=SYNCHRONOUS)
+
     def Save_program_settings(self):
         print(f"Save program settings to programSettings.json")
-        data = [{"IP": self.leIP.text(), "Port": int(self.lePort.text()), "target_file" : self.fileName}]
+        data = [{"IP": self.leIP.text(), 
+                 "Port": int(self.lePort.text()), 
+                 "target_file" : self.fileName,
+                 "url": self.leinfluxAddress.text(),
+                 "bucket": self.leinfluxBucket.text(),
+                 "org": self.leinfluxOrg.text(),
+                 "token_file": self.leinfluxToken.text()
+                }]
         with open("programSettings.json", "w") as file:
             json.dump(data, file, indent=2)
 
@@ -711,6 +766,9 @@ class TargetWheelControl(QWidget):
                 self.button_clicked_id = i
 
     def Update_Position(self): # see self.updateTimeInterval
+        if self.controller.connected == False: 
+            return
+
         if self.pauseUpdate == False:
             if self.askPosFromEncoder:
                 self.controller.getPosition(False)
@@ -725,6 +783,11 @@ class TargetWheelControl(QWidget):
             #if ModPos is close to a target, change the button color
             self.UpdateButtonsColor()
             # self.UpdateStateButtons()
+
+            if self.write_api is not None:
+                points = []
+                points.append(Point("Torque").field("value", self.controller.torque))
+                self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=points)
 
             QApplication.processEvents()  # Process events to update the UI
 

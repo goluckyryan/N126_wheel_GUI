@@ -10,6 +10,10 @@ The required python packages are in **requirements.txt**
 >python3 -m pip install -r requirements.txt
 ```
 
+# influxDB2
+
+https://docs.influxdata.com/influxdb/v2/install/?t=Linux
+
 # Create Python Virtual Enviroment
 
 make sure you have the required packages

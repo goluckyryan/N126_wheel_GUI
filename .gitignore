@@ -5,3 +5,5 @@ __pycache__
 *.pyc
 
 testing.py
+
+influx2Token.txt

@@ -1,6 +1,8 @@
 PyQt6
 PyQt6-Qt6
 numpy
+influxdb-client
+
 #plotly
 #PyQt6-WebEngine
 #pandas
