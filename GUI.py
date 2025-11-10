@@ -815,7 +815,12 @@ class TargetWheelControl(QWidget):
             elif fw_status == 4: # QX4 is running, i.e. the position locking is on
                 self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
             else:
-                self.indicator.setStyleSheet("background-color: blue")  # Standby (not sweeping)
+                # when it is spinging, also compare the spinning speed with the encoder velocity
+                spin_speed_rps = self.controller.jogSpeed
+                if abs(self.controller.encoderVelocity - spin_speed_rps) < 0.1 * spin_speed_rps and spin_speed_rps > 0:
+                    self.indicator.setStyleSheet("background-color: green")  # Spinning at set speed
+                else:
+                    self.indicator.setStyleSheet("background-color: blue")  # Standby (not sweeping)
 
             QApplication.processEvents()  # Process events to update the UI
 
