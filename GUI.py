@@ -239,8 +239,8 @@ class TargetWheelControl(QWidget):
         self.fileNameLineEdit.setReadOnly(True)
         target_layout.addWidget(self.fileNameLineEdit, row, 5, 1, 5)
 
-        #&########## Server 
-        server_group = QGroupBox("Server")
+        #&########## Servers
+        server_group = QGroupBox("Servers")
         server_layout = QGridLayout()
         server_group.setLayout(server_layout)
 
@@ -268,6 +268,11 @@ class TargetWheelControl(QWidget):
         server_layout.addWidget(self.leinfluxOrg, 4, 1, 1, 5)
         server_layout.addWidget(QLabel("Token File:"), 5, 0)
         server_layout.addWidget(self.leinfluxToken, 5, 1, 1, 5)
+
+        #&########## Indicator for Sweeping
+        self.indicator = QPushButton("")
+        self.indicator.setEnabled(False)
+        self.indicator.setFixedHeight(120)
 
         #&########## Status Group
         self.status_group = QGroupBox("General Control")
@@ -383,7 +388,6 @@ class TargetWheelControl(QWidget):
         self.ioStatus.setReadOnly(True)
         self.ioStatus.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.ioStatus, row, 1, 1, 2)
-
 
         #&########## manual command group
         self.manual_group = QGroupBox("Manual Command")
@@ -521,17 +525,16 @@ class TargetWheelControl(QWidget):
         sweep_layout.addWidget(self.sweepStop, row, 0, 1, 2)
 
        
-
         ################################# Add groups to main layout
-        main_layout.addWidget(          target_group, 0, 0, 6, 2)
+        main_layout.addWidget(          target_group, 0, 0, 12, 2)
 
-        main_layout.addWidget(     self.status_group, 0, 2, 5, 1)
-        main_layout.addWidget(     self.manual_group, 5, 2, 1, 1)
+        main_layout.addWidget(          server_group, 0, 2, 4, 1)
+        main_layout.addWidget(       self.spin_group, 4, 2, 3, 1)
+        main_layout.addWidget(      self.sweep_group, 7, 2, 5, 1)
 
-        main_layout.addWidget(          server_group, 0, 3, 1, 1)
-        main_layout.addWidget(       self.spin_group, 1, 3, 2, 1)
-        main_layout.addWidget(      self.sweep_group, 3, 3, 3, 1)
-
+        main_layout.addWidget(     self.status_group,  0, 3, 8, 1)
+        main_layout.addWidget(     self.manual_group,  8, 3, 2, 1)
+        main_layout.addWidget(        self.indicator, 10, 3, 2, 1)
 
         self.setLayout(main_layout)
 
@@ -575,6 +578,15 @@ class TargetWheelControl(QWidget):
                     org=self.leinfluxOrg.text(),
                     token = self.influxToken)
                 self.write_api = self.write_client.write_api(write_options=SYNCHRONOUS)
+
+                try:
+                    # quick write test to verify connectivity and bucket/org access
+                    test_point = Point("connection_test").field("value", 1)
+                    self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=test_point)
+                    print("InfluxDB: connection and write test succeeded.")
+                except Exception as e:
+                    print(f"InfluxDB: connection or write test failed: {e}")
+                    self.write_api = None
 
     def Save_program_settings(self):
         print(f"Save program settings to programSettings.json")
@@ -767,6 +779,7 @@ class TargetWheelControl(QWidget):
 
     def Update_Position(self): # see self.updateTimeInterval
         if self.controller.connected == False: 
+            self.indicator.setStyleSheet("background-color: red")
             return
 
         if self.pauseUpdate == False:
@@ -789,8 +802,22 @@ class TargetWheelControl(QWidget):
                 points.append(Point("Torque").field("value", self.controller.torque))
                 self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=points)
 
-            QApplication.processEvents()  # Process events to update the UI
+            ## checking sweeping, green indicator when sweeping at set speed, yello when spinning up or down, blue is standby (not sweeping)
+            ## by comparing the encoder velocity and the set sweeping speed
+            fw_status = self.controller.FWprogram
+            if fw_status > 0 and fw_status < 4: # QX1 is running, i.e. the sweeping is on
+                enc_vel = self.controller.encoderVelocity
+                sweep_speed_rps = self.controller.sweepSpeed / 60.0
+                if abs(enc_vel - sweep_speed_rps) < 0.1 * sweep_speed_rps:
+                    self.indicator.setStyleSheet("background-color: green")  # Sweeping at set speed
+                else:
+                    self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
+            elif fw_status == 4: # QX4 is running, i.e. the position locking is on
+                self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
+            else:
+                self.indicator.setStyleSheet("background-color: blue")  # Standby (not sweeping)
 
+            QApplication.processEvents()  # Process events to update the UI
 
     #======================================================================================== General Control
     def SetAccel(self):
