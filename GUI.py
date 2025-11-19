@@ -113,6 +113,8 @@ class TargetWheelControl(QWidget):
 
         self.isQX4Locking = False
 
+        self.state = 0 # 0: idle, 1: spin, 2: sweep, 3: set target pos, 4: seek home
+
     def closeEvent(self, event: QCloseEvent):
         if self.fileName is None or self.fileName == "":
             self.save_targets_click()
@@ -804,23 +806,24 @@ class TargetWheelControl(QWidget):
 
             ## checking sweeping, green indicator when sweeping at set speed, yello when spinning up or down, blue is standby (not sweeping)
             ## by comparing the encoder velocity and the set sweeping speed
-            fw_status = self.controller.FWprogram
-            if fw_status > 0 and fw_status < 4: # QX1 is running, i.e. the sweeping is on
+            if self.state == 2: # QX1 is running, i.e. the sweeping is on
                 enc_vel = self.controller.encoderVelocity
-                sweep_speed_rps = self.controller.sweepSpeed / 60.0
+                sweep_speed_rps = self.controller.sweepSpeed
+                print(f"Sweeping: enc_vel = {enc_vel:.2f} rpm, sweep_speed_rps = {sweep_speed_rps:.2f} rpm")
                 if abs(enc_vel - sweep_speed_rps) < 0.1 * sweep_speed_rps:
                     self.indicator.setStyleSheet("background-color: green")  # Sweeping at set speed
                 else:
                     self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
-            elif fw_status == 4: # QX4 is running, i.e. the position locking is on
-                self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
-            else:
+            elif self.state == 1: 
                 # when it is spinging, also compare the spinning speed with the encoder velocity
-                spin_speed_rps = self.controller.jogSpeed
+                spin_speed_rps = self.controller.jogSpeed / 60 # in rpm
+                print(f"Spinning: enc_vel = {self.controller.encoderVelocity:.2f} rpm, spin_speed_rps = {spin_speed_rps:.2f} rpm")
                 if abs(self.controller.encoderVelocity - spin_speed_rps) < 0.1 * spin_speed_rps and spin_speed_rps > 0:
                     self.indicator.setStyleSheet("background-color: green")  # Spinning at set speed
                 else:
                     self.indicator.setStyleSheet("background-color: blue")  # Standby (not sweeping)
+            else:
+                self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
 
             QApplication.processEvents()  # Process events to update the UI
 
@@ -890,11 +893,14 @@ class TargetWheelControl(QWidget):
             self.SetEnableGeneralControl(False)
             self.setEnableSpinControl(False)
             self.setEnableSweepControl(False)
+            self.state = 4
             self.controller.seekHome()
             self.CheckPostionStable()
+            self.state = 0
             self.SetEnableGeneralControl(True)
             self.setEnableSpinControl(True)
             self.setEnableSweepControl(True)
+            
             
     def ZeroEncoderPosition(self):
         if self.controller.connected:
@@ -1027,6 +1033,8 @@ class TargetWheelControl(QWidget):
                 self.setEnableSpinControl(False)
                 self.setEnableSweepControl(False)
 
+                self.state = 3  # set target position
+
             else:
 
                 self.controller.stopQX4LockPosition()
@@ -1038,6 +1046,8 @@ class TargetWheelControl(QWidget):
                 self.SetEnableGeneralControl(True)
                 self.setEnableSpinControl(True)
                 self.setEnableSweepControl(True)
+
+                self.state = 0  # idle
 
     #======================================================================================== Sweep Control
     def SetMaxSweepSpeed(self):
@@ -1092,6 +1102,8 @@ class TargetWheelControl(QWidget):
             self.setEnableSweepControl(False, True)
             self.setEnableTargetControl(False)
 
+            self.state = 2  # Sweeping and Spinning
+
             # if self.cbSweepDirection.currentIndex() == 0:
             #     print("Starting sweep and spin in clockwise direction.")
             #     self.controller.send_message("DI100")
@@ -1143,6 +1155,8 @@ class TargetWheelControl(QWidget):
             self.direction_label.setStyleSheet("color: blue;")
             self.direction_label.setText("Only Positive Direction")
 
+            self.state = 0  # Idle
+
             self.Update_Status()
 
             self.SetEnableGeneralControl(True)
@@ -1186,6 +1200,8 @@ class TargetWheelControl(QWidget):
 
             QApplication.focusWidget().clearFocus()
 
+            self.state = 1  # Spinning
+
             self.updateTimeInterval = 300 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
@@ -1200,11 +1216,12 @@ class TargetWheelControl(QWidget):
             self.controller.send_message("DI100")   # ALWSY POSITIVE NUMBER
             self.controller.startSpin()
 
-            self.pauseUpdate = False
+            self.pauseUpdate = False            
 
     def StopSpin(self):
         if self.controller.connected:
 
+            self.state = 0  # Idle  
             self.controller.stopSpin()
             QApplication.focusWidget().clearFocus()
 
