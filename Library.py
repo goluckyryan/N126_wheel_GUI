@@ -192,9 +192,9 @@ class Controller():
             time.sleep(0.1)
             self.send_message('RLO0') #release the motor?
 
-            self.getTorque()
-            self.torque_ref = self.torque # set the current torque as the reference
-            self.torque = self.torque - self.torque_ref
+            # self.getTorque()
+            # self.torque_ref = self.torque # set the current torque as the reference
+            # self.torque = self.torque - self.torque_ref
 
             self.send_message('QX1')
             self.isSpinning = True

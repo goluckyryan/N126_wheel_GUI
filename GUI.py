@@ -806,22 +806,24 @@ class TargetWheelControl(QWidget):
 
             ## checking sweeping, green indicator when sweeping at set speed, yello when spinning up or down, blue is standby (not sweeping)
             ## by comparing the encoder velocity and the set sweeping speed
+            # print(f"Current state: {self.state}")
             if self.state == 2: # QX1 is running, i.e. the sweeping is on
-                enc_vel = self.controller.encoderVelocity
+                enc_vel = self.controller.motorVelocity
                 sweep_speed_rps = self.controller.sweepSpeed
-                print(f"Sweeping: enc_vel = {enc_vel:.2f} rpm, sweep_speed_rps = {sweep_speed_rps:.2f} rpm")
+                # print(f"Sweeping: enc_vel = {enc_vel:.2f} rpm, sweep_speed_rps = {sweep_speed_rps:.2f} rpm")
                 if abs(enc_vel - sweep_speed_rps) < 0.1 * sweep_speed_rps:
                     self.indicator.setStyleSheet("background-color: green")  # Sweeping at set speed
                 else:
                     self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
             elif self.state == 1: 
                 # when it is spinging, also compare the spinning speed with the encoder velocity
-                spin_speed_rps = self.controller.jogSpeed / 60 # in rpm
-                print(f"Spinning: enc_vel = {self.controller.encoderVelocity:.2f} rpm, spin_speed_rps = {spin_speed_rps:.2f} rpm")
-                if abs(self.controller.encoderVelocity - spin_speed_rps) < 0.1 * spin_speed_rps and spin_speed_rps > 0:
+                spin_speed_rps = self.spSpinSpeed.value()
+                # print(f"Spinning: enc_vel = {self.controller.motorVelocity:.2f} rpm, spin_speed_rps = {spin_speed_rps:.2f} rpm")
+                diff = abs(self.controller.motorVelocity - spin_speed_rps)
+                if diff < 0.1 * spin_speed_rps and spin_speed_rps > 0:
                     self.indicator.setStyleSheet("background-color: green")  # Spinning at set speed
                 else:
-                    self.indicator.setStyleSheet("background-color: blue")  # Standby (not sweeping)
+                    self.indicator.setStyleSheet("background-color: yellow")  # Spinging up or down
             else:
                 self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
 
@@ -1084,12 +1086,12 @@ class TargetWheelControl(QWidget):
                 new_pos -= STEP_PER_REVOLUTION
             self.target_pos[i].setText(f"{int(new_pos)}")
             # print(f"Target {i} position set to {int(new_pos)} steps.")
-            self.target_rev[i].setText(f"{new_pos / STEP_PER_REVOLUTION:.2f}")
+            self.target_rev[i].setText(f"{new_pos / STEP_PER_REVOLUTION:.3f}")
 
     def SetSweepSpeed(self):
         if self.enableSignals:
             self.controller.setSweepSpeed( self.spSweepSpeed.value())
-            self.statusSweepSpeed.setText(f"{self.spSweepSpeed.value()/60.:.1f}")
+            self.statusSweepSpeed.setText(f"{self.spSweepSpeed.value()/60.:.3f}")
 
     def SetSweepCutOff(self):
         if self.enableSignals:
@@ -1182,7 +1184,7 @@ class TargetWheelControl(QWidget):
             speed = self.spSpinSpeed.value()
             self.controller.setJogSpeed(speed/60.)
             # self.statusSpinSpeed.setText(f"{speed*60:.1f}")
-            print(f"Spin Speed set to {speed:.2f} [rpm] = {speed/60.:.1f} [r/s]")
+            print(f"Spin Speed set to {speed:.2f} [rpm] = {speed/60.:.3f} [r/s]")
 
     def SetSpinAccel(self):
         if self.enableSignals:
@@ -1227,7 +1229,7 @@ class TargetWheelControl(QWidget):
 
             self.pauseUpdate = False
 
-            self.updateTimeInterval = 5000 
+            self.updateTimeInterval = 500 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
 
