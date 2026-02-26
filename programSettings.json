@@ -1,7 +1,11 @@
 [
   {
-    "IP": "192.168.203.68",
+    "IP": "192.168.203.36",
     "Port": 7776,
-    "target_file": "/home/ryan/N126_wheel_GUI/target_pos.json"
+    "target_file": "/home/ryan/N126_wheel_GUI/target_name",
+    "url": "localhost:8086",
+    "bucket": "",
+    "org": "ANL",
+    "token_file": "Fail to load token file."
   }
 ]
