@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import sys
+import os
 import json
 import math
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QGridLayout,
     QGroupBox, QLabel,  QFileDialog, QCheckBox, QLineEdit, QDoubleSpinBox,
-    QApplication, QComboBox, QInputDialog
+    QComboBox, QInputDialog
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QCloseEvent
@@ -21,7 +22,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS, ASYNCHRONOUS
 ########################################################################################################
 
 NTARGET = 16
-DAEFUL_POS_UPDATE_INTERVAL = 1000  # milliseconds
+DEFAULT_POS_UPDATE_INTERVAL = 1000  # milliseconds
 
 class TargetButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -103,7 +104,7 @@ class TargetWheelControl(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Position)
-        self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL  # milliseconds
+        self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL  # milliseconds
 
         self.Connect_Server()
 
@@ -112,6 +113,7 @@ class TargetWheelControl(QWidget):
         self.askPosFromEncoder = True
 
         self.isQX4Locking = False
+        self.isAllSweepEnabled = False
 
         self.state = 0 # 0: idle, 1: spin, 2: sweep, 3: set target pos, 4: seek home
 
@@ -545,56 +547,71 @@ class TargetWheelControl(QWidget):
     ################################################################################################################
     ################################################################################################################
     def Load_program_setting(self):
-        with open("programSettings.json", "r") as file:
-            data = json.load(file)[0]
-            self.leIP.setText(data["IP"])
-            self.lePort.setText(str(data["Port"]))
+        if not os.path.exists("programSettings.json"):
+            print("programSettings.json not found, creating default.")
+            default = [{"IP": "192.168.0.1", "Port": 7776, "target_file": "",
+                        "url": "http://localhost:8086", "bucket": "", "org": "", "token_file": ""}]
+            with open("programSettings.json", "w") as file:
+                json.dump(default, file, indent=2)
 
-            self.fileName = data["target_file"]
-            self.fileNameLineEdit.setText(self.fileName)
-            self.load_targets_info()
+        try:
+            with open("programSettings.json", "r") as file:
+                data = json.load(file)[0]
+        except (FileNotFoundError, json.JSONDecodeError, IndexError) as e:
+            print(f"Error loading programSettings.json: {e}")
+            return
 
-            self.leinfluxAddress.setText(data["url"])
-            self.leinfluxBucket.setText(data["bucket"])
-            self.leinfluxOrg.setText(data["org"])
-            self.leinfluxToken.setText(data["token_file"])
+        self.leIP.setText(data["IP"])
+        self.lePort.setText(str(data["Port"]))
 
-            token_file = data.get("token_file", "")
-            if token_file:
-                try:
-                    with open(token_file, "r") as tf:
-                        self.influxToken = tf.read().strip()
-                        print(f"Loaded InfluxDB token from '{token_file}'.")
-                except Exception as e:
-                    print(f"Could not read token file '{token_file}': {e}")
-                    self.influxToken = None
-                    self.leinfluxToken.setText("Fail to load token file.")
-            else:
+        self.fileName = data["target_file"]
+        self.fileNameLineEdit.setText(self.fileName)
+        self.load_targets_info()
+
+        self.leinfluxAddress.setText(data["url"])
+        self.leinfluxBucket.setText(data["bucket"])
+        self.leinfluxOrg.setText(data["org"])
+        self.leinfluxToken.setText(data["token_file"])
+
+        token_file = data.get("token_file", "")
+        if token_file:
+            try:
+                with open(token_file, "r") as tf:
+                    self.influxToken = tf.read().strip()
+                    print(f"Loaded InfluxDB token from '{token_file}'.")
+            except Exception as e:
+                print(f"Could not read token file '{token_file}': {e}")
                 self.influxToken = None
-                self.leinfluxToken.setText("No token file specified.")
+                self.leinfluxToken.setText("Fail to load token file.")
+        else:
+            self.influxToken = None
+            self.leinfluxToken.setText("No token file specified.")
 
+        if self.influxToken is not None:
+            self.write_client = InfluxDBClient(
+                url=self.leinfluxAddress.text(),
+                org=self.leinfluxOrg.text(),
+                token=self.influxToken)
+            self.write_api = self.write_client.write_api(write_options=SYNCHRONOUS)
 
-            if self.influxToken is not None:
-                self.write_client = InfluxDBClient(
-                    url=self.leinfluxAddress.text(),
-                    org=self.leinfluxOrg.text(),
-                    token = self.influxToken)
-                self.write_api = self.write_client.write_api(write_options=SYNCHRONOUS)
-
-                try:
-                    # quick write test to verify connectivity and bucket/org access
-                    test_point = Point("connection_test").field("value", 1)
-                    self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=test_point)
-                    print("InfluxDB: connection and write test succeeded.")
-                except Exception as e:
-                    print(f"InfluxDB: connection or write test failed: {e}")
-                    self.write_api = None
+            try:
+                # quick write test to verify connectivity and bucket/org access
+                test_point = Point("connection_test").field("value", 1)
+                self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=test_point)
+                print("InfluxDB: connection and write test succeeded.")
+            except Exception as e:
+                print(f"InfluxDB: connection or write test failed: {e}")
+                self.write_api = None
 
     def Save_program_settings(self):
         print(f"Save program settings to programSettings.json")
-        data = [{"IP": self.leIP.text(), 
-                 "Port": int(self.lePort.text()), 
-                 "target_file" : self.fileName,
+        try:
+            port = int(self.lePort.text())
+        except ValueError:
+            port = 7776
+        data = [{"IP": self.leIP.text(),
+                 "Port": port,
+                 "target_file" : self.fileName if self.fileName else "",
                  "url": self.leinfluxAddress.text(),
                  "bucket": self.leinfluxBucket.text(),
                  "org": self.leinfluxOrg.text(),
@@ -604,7 +621,17 @@ class TargetWheelControl(QWidget):
             json.dump(data, file, indent=2)
 
     def Connect_Server(self):
-        self.controller.Connect(self.leIP.text(), int(self.lePort.text()))
+        ip = self.leIP.text().strip()
+        port_text = self.lePort.text().strip()
+        if not ip or not port_text:
+            print("IP or Port is empty, skipping connection.")
+            return
+        try:
+            port = int(port_text)
+        except ValueError:
+            print(f"Invalid port: '{port_text}'")
+            return
+        self.controller.Connect(ip, port)
         self.enableSignals = False  # Disable signals-slots during connection
         self.Display_Status()
         self.enableSignals = True  # Enable signals-slots after connection
@@ -632,7 +659,7 @@ class TargetWheelControl(QWidget):
             self.sweepStop.setEnabled(not enable)
         else:
             self.spSpokeWidth.setEnabled(enable)
-            self.spSpokeWidth.setEnabled(enable)
+            self.spSpokeOffset.setEnabled(enable)
             self.spSweepSpeed.setEnabled(enable)
             self.spSweepCutOff.setEnabled(enable)
 
@@ -705,6 +732,7 @@ class TargetWheelControl(QWidget):
                 if self.controller.sweepMask & (1 << bitPos):
                     self.target_chkBox[i].setChecked(True)
             if self.controller.sweepMask == (1 << 16) - 1:
+                self.isAllSweepEnabled = True
                 self.chkAll.setStyleSheet("background-color: green")
                 self.chkAll.setText("Disable All")
 
@@ -780,11 +808,11 @@ class TargetWheelControl(QWidget):
                 self.button_clicked_id = i
 
     def Update_Position(self): # see self.updateTimeInterval
-        if self.controller.connected == False: 
+        if not self.controller.connected:
             self.indicator.setStyleSheet("background-color: red")
             return
 
-        if self.pauseUpdate == False:
+        if not self.pauseUpdate:
             if self.askPosFromEncoder:
                 self.controller.getPosition(False)
                 self.controller.getIOStatus()
@@ -823,7 +851,7 @@ class TargetWheelControl(QWidget):
                 if diff < 0.1 * spin_speed_rps and spin_speed_rps > 0:
                     self.indicator.setStyleSheet("background-color: green")  # Spinning at set speed
                 else:
-                    self.indicator.setStyleSheet("background-color: yellow")  # Spinging up or down
+                    self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
             else:
                 self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
 
@@ -849,46 +877,67 @@ class TargetWheelControl(QWidget):
             self.controller.setDeaccelRate(deaccel)
             print(f"Deacceleration set to {deaccel:.3f} [r/s^2]")
 
-    def CheckPostionStable(self, wait_time=10, update_interval=0.2, stable_threshold=5):
-        if self.controller.connected:
-    
-            self.pauseUpdate = True  
+    def _updatePositionDisplay(self):
+        self.EncoderPos.setText(f"{self.controller.position}")
+        self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
+        self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
-            start_time = time.time()
-            old_position = self.controller.position
-            stableCount  = 0
-            while time.time() - start_time < wait_time:
-                time.sleep(update_interval)  
-                self.controller.getPosition()
-                self.EncoderPos.setText(f"{self.controller.position}") 
-                self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
-                self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
-                QApplication.processEvents()  # Process events to update the UI
-                current_position = self.controller.position
-                print(f"Current position: {current_position}, Old position: {old_position} | count : {stableCount}")
-                if abs(current_position - old_position) < 1:
-                    stableCount += 1
-                    if stableCount >= stable_threshold:
-                        print("Position Stable.") 
-                        break
-                else:
-                    stableCount = 0
-                old_position = current_position
-            else:
-                print("Home position not found within 10 seconds. ")
+    def CheckPostionStable(self, on_complete=None, wait_time=10, update_interval=200, stable_threshold=5):
+        if not self.controller.connected:
+            return
 
-            time.sleep(0.2)  # Wait a bit to ensure the command is processed   
-            self.controller.getPosition()
-            self.EncoderPos.setText(f"{self.controller.position}") 
-            self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
-            self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")      
-            QApplication.processEvents()  # Process events to update the UI
+        self.pauseUpdate = True
+        self._stability_ctx = {
+            'start_time': time.time(),
+            'old_position': self.controller.position,
+            'stable_count': 0,
+            'wait_time': wait_time,
+            'stable_threshold': stable_threshold,
+            'on_complete': on_complete,
+        }
+        self._stabilityTimer = QTimer(self)
+        self._stabilityTimer.timeout.connect(self._checkStabilityTick)
+        self._stabilityTimer.start(update_interval)
 
-            self.pauseUpdate = False
-            self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL 
-            self.timer.stop()
-            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
-            print("End of check position stable.")
+    def _checkStabilityTick(self):
+        ctx = self._stability_ctx
+        self.controller.getPosition()
+        self._updatePositionDisplay()
+
+        current_position = self.controller.position
+        print(f"Current position: {current_position}, Old position: {ctx['old_position']} | count : {ctx['stable_count']}")
+
+        if abs(current_position - ctx['old_position']) < 1:
+            ctx['stable_count'] += 1
+            if ctx['stable_count'] >= ctx['stable_threshold']:
+                print("Position Stable.")
+                self._finishStabilityCheck()
+                return
+        else:
+            ctx['stable_count'] = 0
+        ctx['old_position'] = current_position
+
+        if time.time() - ctx['start_time'] >= ctx['wait_time']:
+            print("Home position not found within timeout.")
+            self._finishStabilityCheck()
+
+    def _finishStabilityCheck(self):
+        self._stabilityTimer.stop()
+        self._stabilityTimer.deleteLater()
+
+        self.controller.getPosition()
+        self._updatePositionDisplay()
+
+        self.pauseUpdate = False
+        self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL
+        self.timer.stop()
+        self.timer.start(self.updateTimeInterval)
+        print("End of check position stable.")
+
+        on_complete = self._stability_ctx.get('on_complete')
+        self._stability_ctx = None
+        if on_complete:
+            on_complete()
 
     def SeekHome(self):
         if self.controller.connected:
@@ -897,11 +946,13 @@ class TargetWheelControl(QWidget):
             self.setEnableSweepControl(False)
             self.state = 4
             self.controller.seekHome()
-            self.CheckPostionStable()
-            self.state = 0
-            self.SetEnableGeneralControl(True)
-            self.setEnableSpinControl(True)
-            self.setEnableSweepControl(True)
+            self.CheckPostionStable(on_complete=self._onSeekHomeComplete)
+
+    def _onSeekHomeComplete(self):
+        self.state = 0
+        self.SetEnableGeneralControl(True)
+        self.setEnableSpinControl(True)
+        self.setEnableSweepControl(True)
             
             
     def ZeroEncoderPosition(self):
@@ -937,7 +988,7 @@ class TargetWheelControl(QWidget):
         #=== change color
         if  self.button_clicked_id != id:
             self.target_buttons[id].setStyleSheet("background-color: green")
-            if self.button_clicked_id != None:
+            if self.button_clicked_id is not None:
                 self.target_buttons[self.button_clicked_id].setStyleSheet("")
 
             self.button_clicked_id = id
@@ -957,24 +1008,26 @@ class TargetWheelControl(QWidget):
 
 
     def SetPosition(self, id):
-        # print(f"Set Position for Target {id}: {self.target_pos[id].text()}")
-        if self.target_pos[id].text().isdigit():
+        try:
             pos = int(self.target_pos[id].text())
-            self.target_rev[id].setText(f"{pos / STEP_PER_REVOLUTION:.2f}")
+        except ValueError:
+            return
 
-            for i in range(NTARGET):
-                if i == 0:
-                    continue
-                idx = (id + i) % NTARGET
-                pp = pos + STEP_PER_REVOLUTION/NTARGET * i
-                if pp >= STEP_PER_REVOLUTION:
-                    pp -= STEP_PER_REVOLUTION
-                self.target_pos[idx].setText(f"{int(pp)}")
-                self.target_rev[idx].setText(f"{pp / STEP_PER_REVOLUTION:.2f}")
+        self.target_rev[id].setText(f"{pos / STEP_PER_REVOLUTION:.2f}")
 
-            if self.isQX4Locking :
-                self.qx4SetPos.setText(f"{pos}")
-                self.controller.setQX4EncoderDemandPos(int(pos))
+        for i in range(NTARGET):
+            if i == 0:
+                continue
+            idx = (id + i) % NTARGET
+            pp = pos + STEP_PER_REVOLUTION/NTARGET * i
+            if pp >= STEP_PER_REVOLUTION:
+                pp -= STEP_PER_REVOLUTION
+            self.target_pos[idx].setText(f"{int(pp)}")
+            self.target_rev[idx].setText(f"{pp / STEP_PER_REVOLUTION:.2f}")
+
+        if self.isQX4Locking:
+            self.qx4SetPos.setText(f"{pos}")
+            self.controller.setQX4EncoderDemandPos(int(pos))
 
     def Sweep_picked(self, id):
         self.timer.stop()  # Stop the timer to prevent updates during sweep selection
@@ -989,8 +1042,9 @@ class TargetWheelControl(QWidget):
 
         print("New Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask))
 
-        if self.chkAll.styleSheet() == "background-color: green":
-            self.chkAll.setStyleSheet("")  # Uncheck the "All" button if it was checked
+        if self.isAllSweepEnabled:
+            self.isAllSweepEnabled = False
+            self.chkAll.setStyleSheet("")
             self.chkAll.setText("Enable All")
 
         self.controller.setSweepMask(self.controller.sweepMask)
@@ -1000,17 +1054,19 @@ class TargetWheelControl(QWidget):
     def setAllSweepTargets(self):
         self.timer.stop()
         self.enableSignals = False  # Disable signals-slots during sweep selection
-        if self.chkAll.styleSheet() == "":
+        if not self.isAllSweepEnabled:
+            self.isAllSweepEnabled = True
             self.chkAll.setStyleSheet("background-color: green")
             self.chkAll.setText("Disable All")
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(True)
             tempMask = (1 << 16) - 1  # Set all bits to 1
             self.controller.setSweepMask(tempMask)
-        elif self.chkAll.styleSheet() == "background-color: green":
+        else:
+            self.isAllSweepEnabled = False
             print("Uncheck all targets from sweep.")
             self.chkAll.setStyleSheet("")
-            self.chkAll.setText("Eanble All")
+            self.chkAll.setText("Enable All")
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(False)
             self.controller.setSweepMask(0)
@@ -1022,11 +1078,11 @@ class TargetWheelControl(QWidget):
     def LockPosition(self):
         if self.controller.connected:
 
-            if self.bnLockPos.styleSheet() == "":
-                self.bnLockPos.setStyleSheet("background-color: green")
-                
-                self.controller.startQX4LockPosition()
+            if not self.isQX4Locking:
                 self.isQX4Locking = True
+                self.bnLockPos.setStyleSheet("background-color: green")
+
+                self.controller.startQX4LockPosition()
 
                 time.sleep(0.5)  # Wait a bit to ensure the command is processed
                 self.UpdateQX4ParametersFromMemory()
@@ -1038,11 +1094,10 @@ class TargetWheelControl(QWidget):
                 self.state = 3  # set target position
 
             else:
+                self.isQX4Locking = False
+                self.bnLockPos.setStyleSheet("")
 
                 self.controller.stopQX4LockPosition()
-                self.isQX4Locking = False
-            
-                self.bnLockPos.setStyleSheet("")
                 self.UpdateQX4ParametersFromMemory()
 
                 self.SetEnableGeneralControl(True)
@@ -1166,11 +1221,7 @@ class TargetWheelControl(QWidget):
             self.setEnableSweepControl(True, True)
             self.setEnableTargetControl(True)
 
-            for i in range(NTARGET):
-                self.target_buttons[i].setEnabled(True)
-                self.target_pos[i].setEnabled(True)
-
-            self.updateTimeInterval = DAEFUL_POS_UPDATE_INTERVAL 
+            self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL 
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
 
@@ -1208,14 +1259,14 @@ class TargetWheelControl(QWidget):
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
 
-            if self.cbDirection.currentIndex() == 0:
-               print("Starting spin in clockwise direction.")
-               self.controller.send_message("DI100")   
-            else:
-                print("Starting spin in counterclockwise direction.")
-                self.controller.send_message("DI-100")
+            # if self.cbDirection.currentIndex() == 0:
+            #    print("Starting spin in clockwise direction.")
+            #    self.controller.send_message("DI100")   
+            # else:
+            #     print("Starting spin in counterclockwise direction.")
+            #     self.controller.send_message("DI-100")
 
-            self.controller.send_message("DI100")   # ALWSY POSITIVE NUMBER
+            self.controller.send_message("DI100")   # ALWAYS POSITIVE NUMBER
             self.controller.startSpin()
 
             self.pauseUpdate = False            
