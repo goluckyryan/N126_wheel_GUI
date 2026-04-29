@@ -7,3 +7,4 @@ __pycache__
 testing.py
 
 influx2Token.txt
+*.pdf

@@ -528,7 +528,58 @@ class TargetWheelControl(QWidget):
         self.sweepStop.clicked.connect(self.StopSweep)
         sweep_layout.addWidget(self.sweepStop, row, 0, 1, 2)
 
-       
+
+        ########### Filter Settings group
+        filter_group = QGroupBox("Stepper Filter")
+        filter_layout = QGridLayout()
+        filter_group.setLayout(filter_layout)
+        filter_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        row = 0
+        filter_layout.addWidget(QLabel("Anti-res Freq [Hz] : "), row, 0)
+        self.spAntiResFreq = RDoubleSpinBox()
+        self.spAntiResFreq.setDecimals(0)
+        self.spAntiResFreq.setSingleStep(1)
+        self.spAntiResFreq.setRange(1, 2000)
+        self.spAntiResFreq.returnPressed.connect(self.SetAntiResFreq)
+        filter_layout.addWidget(self.spAntiResFreq, row, 1)
+
+        row += 1
+        filter_layout.addWidget(QLabel("Anti-res Gain : "), row, 0)
+        self.spAntiResGain = RDoubleSpinBox()
+        self.spAntiResGain.setDecimals(0)
+        self.spAntiResGain.setSingleStep(100)
+        self.spAntiResGain.setRange(0, 32767)
+        self.spAntiResGain.returnPressed.connect(self.SetAntiResGain)
+        filter_layout.addWidget(self.spAntiResGain, row, 1)
+
+        row += 1
+        filter_layout.addWidget(QLabel("4th Harm Gain : "), row, 0)
+        self.spHarmonicGain = RDoubleSpinBox()
+        self.spHarmonicGain.setDecimals(0)
+        self.spHarmonicGain.setSingleStep(100)
+        self.spHarmonicGain.setRange(0, 32767)
+        self.spHarmonicGain.returnPressed.connect(self.SetHarmonicGain)
+        filter_layout.addWidget(self.spHarmonicGain, row, 1)
+
+        row += 1
+        filter_layout.addWidget(QLabel("4th Harm Phase : "), row, 0)
+        self.spHarmonicPhase = RDoubleSpinBox()
+        self.spHarmonicPhase.setDecimals(0)
+        self.spHarmonicPhase.setSingleStep(1)
+        self.spHarmonicPhase.setRange(-125, 125)
+        self.spHarmonicPhase.returnPressed.connect(self.SetHarmonicPhase)
+        filter_layout.addWidget(self.spHarmonicPhase, row, 1)
+
+        row += 1
+        filter_layout.addWidget(QLabel("Step Filter [Hz] : "), row, 0)
+        self.spStepFilterFreq = RDoubleSpinBox()
+        self.spStepFilterFreq.setDecimals(0)
+        self.spStepFilterFreq.setSingleStep(1)
+        self.spStepFilterFreq.setRange(0, 2500)
+        self.spStepFilterFreq.returnPressed.connect(self.SetStepFilterFreq)
+        filter_layout.addWidget(self.spStepFilterFreq, row, 1)
+
         ################################# Add groups to main layout
         main_layout.addWidget(          target_group, 0, 0, 12, 2)
 
@@ -539,6 +590,8 @@ class TargetWheelControl(QWidget):
         main_layout.addWidget(     self.status_group,  0, 3, 8, 1)
         main_layout.addWidget(     self.manual_group,  8, 3, 2, 1)
         main_layout.addWidget(        self.indicator, 10, 3, 2, 1)
+
+        main_layout.addWidget(         filter_group,  0, 4, 6, 1)
 
         self.setLayout(main_layout)
 
@@ -615,7 +668,7 @@ class TargetWheelControl(QWidget):
                  "url": self.leinfluxAddress.text(),
                  "bucket": self.leinfluxBucket.text(),
                  "org": self.leinfluxOrg.text(),
-                 "token_file": self.leinfluxToken.text()
+                 "token_file": self.leinfluxToken.text() if self.influxToken else ""
                 }]
         with open("programSettings.json", "w") as file:
             json.dump(data, file, indent=2)
@@ -704,6 +757,12 @@ class TargetWheelControl(QWidget):
             self.spDeccel.setValue(self.controller.deaccelRate)
             self.spSpeed.setValue(self.controller.velocity)
             self.statusSpeed.setText(f"{self.controller.velocity*60:.1f}")
+
+            self.spAntiResFreq.setValue(self.controller.antiResFreq)
+            self.spAntiResGain.setValue(self.controller.antiResGain)
+            self.spHarmonicGain.setValue(self.controller.harmonicGain)
+            self.spHarmonicPhase.setValue(self.controller.harmonicPhase)
+            self.spStepFilterFreq.setValue(self.controller.stepFilterFreq)
 
             self.spSpinSpeed.setValue(self.controller.jogSpeed*60.)
             # self.statusSpinSpeed.setText(f"{self.controller.jogSpeed*60:.1f}")
@@ -876,6 +935,36 @@ class TargetWheelControl(QWidget):
             deaccel = self.spDeccel.value()
             self.controller.setDeaccelRate(deaccel)
             print(f"Deacceleration set to {deaccel:.3f} [r/s^2]")
+
+    def SetAntiResFreq(self):
+        if self.enableSignals:
+            val = int(self.spAntiResFreq.value())
+            self.controller.setAntiResFreq(val)
+            print(f"Anti-resonance filter frequency set to {val} Hz")
+
+    def SetAntiResGain(self):
+        if self.enableSignals:
+            val = int(self.spAntiResGain.value())
+            self.controller.setAntiResGain(val)
+            print(f"Anti-resonance filter gain set to {val}")
+
+    def SetHarmonicGain(self):
+        if self.enableSignals:
+            val = int(self.spHarmonicGain.value())
+            self.controller.setHarmonicGain(val)
+            print(f"4th harmonic filter gain set to {val}")
+
+    def SetHarmonicPhase(self):
+        if self.enableSignals:
+            val = int(self.spHarmonicPhase.value())
+            self.controller.setHarmonicPhase(val)
+            print(f"4th harmonic filter phase set to {val}")
+
+    def SetStepFilterFreq(self):
+        if self.enableSignals:
+            val = int(self.spStepFilterFreq.value())
+            self.controller.setStepFilterFreq(val)
+            print(f"Step filter frequency set to {val} Hz")
 
     def _updatePositionDisplay(self):
         self.EncoderPos.setText(f"{self.controller.position}")

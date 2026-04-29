@@ -46,6 +46,12 @@ class Controller():
         self.torque = 0.0 # diff between motor and encoder position
         self.torque_ref = 0.0 # inital value of the torque
 
+        self.antiResFreq = 0
+        self.antiResGain = 0
+        self.harmonicGain = 0
+        self.harmonicPhase = 0
+        self.stepFilterFreq = 0
+
         #QX4 parameters
         self.isQX4Updated = False
         self.qx4EncoderDemandPos = 0   # R6
@@ -154,6 +160,12 @@ class Controller():
             self.torque_ref = float(self.queryNumber('RUx1',False))
             self.torque = 0.0 # reset torque to zero
 
+            self.antiResFreq = int(self.queryNumber('CF', False))
+            self.antiResGain = int(self.queryNumber('CG', False))
+            self.harmonicGain = int(self.queryNumber('HG', False))
+            self.harmonicPhase = int(self.queryNumber('HP', False))
+            self.stepFilterFreq = int(self.queryNumber('SF', False))
+
             # firmware set the minimm sweep speed to 6 rpm
             if self.sweepSpeed < 6 :
                 self.sweepSpeed = 6.0
@@ -219,7 +231,7 @@ class Controller():
 
     def getTemperature(self, outputMsg=True):
         if self.connected:
-            self.temperaturep = self.queryNumber('RUt1', outputMsg) / 10 # temperature in C
+            self.temperature = self.queryNumber('RUt1', outputMsg) / 10
             return self.temperature
         else:
             return math.nan
@@ -289,7 +301,33 @@ class Controller():
         if self.connected:
             print(f"Setting spin speed to {accel} rev/sec^2...")
             self.send_message(f"JA{accel:.3f}")
-            self.jogAccel = accel    
+            self.jogAccel = accel
+
+    def setAntiResFreq(self, freq: int):
+        if self.connected:
+            self.send_message(f"CF{freq:d}")
+            self.antiResFreq = freq
+
+    def setAntiResGain(self, gain: int):
+        if self.connected:
+            self.send_message(f"CG{gain:d}")
+            self.antiResGain = gain
+
+    def setHarmonicGain(self, gain: int):
+        if self.connected:
+            self.send_message(f"HG{gain:d}")
+            self.harmonicGain = gain
+
+    def setHarmonicPhase(self, phase: int):
+        if self.connected:
+            self.send_message(f"HP{phase:d}")
+            self.harmonicPhase = phase
+
+    def setStepFilterFreq(self, freq: int):
+        if self.connected:
+            self.send_message(f"SF{freq:d}")
+            self.stepFilterFreq = freq
+
     def startSpin(self):
         if self.connected:
             print("Starting spin...")
@@ -497,12 +535,14 @@ class Controller():
             'RUe1', 'CJ', 'SJ', 'SP', 'RE', 'CS',
             'SHX0H', 'EP', 'RE', 'RL@1', 'QX1', 'SK', 'FL', 'FP',
             'RU11', 'RUt1', 'RUv1', 'RUw1', 'RUx1', 'RU51',
-            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4', 'IO', 'RMNO'
+            'RU21', 'RU31', 'RU41', 'RU61', 'RU71', 'RU81', 'RU91', 'RU;1', 'QX4', 'IO', 'RMNO',
+            'CF', 'CG', 'HG', 'HP', 'SF'
         ]
         validWriteMessages = [ # message that use to write values
             'AM', 'AC', 'DE', 'VE', 'DI', 'JS', 'JA', 'EP', 'SP',
             'RL1', 'RL2', 'RL3', 'RL4', 'RL5', 'CS', 'QX1',
-            'RL6', 'RL7', 'RL8', 'RL9', 'IO', 'RLO', 'RUp', 'IO'
+            'RL6', 'RL7', 'RL8', 'RL9', 'IO', 'RLO', 'RUp', 'IO',
+            'CF', 'CG', 'HG', 'HP', 'SF'
         ]
 
         for valid_message in validReadMassages:
