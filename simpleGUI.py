@@ -4,20 +4,20 @@ import sys
 import os
 import json
 import math
+from collections import deque
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QPushButton, QVBoxLayout, QGridLayout,
-    QGroupBox, QLabel,  QFileDialog, QCheckBox, QLineEdit, QDoubleSpinBox,
-    QComboBox, QInputDialog
+    QApplication, QWidget, QPushButton, QGridLayout, QHBoxLayout,
+    QGroupBox, QLabel, QCheckBox, QLineEdit, QDoubleSpinBox,
+    QInputDialog
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QObject
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QCloseEvent
 import time
 
-from Library import Controller, STEP_PER_REVOLUTION
-from PyQt6.QtWidgets import QSpacerItem, QSizePolicy
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
-from influxdb_client import InfluxDBClient, Point, WritePrecision
-from influxdb_client.client.write_api import SYNCHRONOUS, ASYNCHRONOUS
+from Library import Controller, STEP_PER_REVOLUTION
 
 ########################################################################################################
 
@@ -29,17 +29,13 @@ class TargetButton(QPushButton):
         super().__init__(text, parent)
         self.isChangeNameMode = False
         self.name = text
-        # self.setStyleSheet("background-color : #EDA6E5")
-    
+
     def mousePressEvent(self, event):
-        # Check for Ctrl + Left-click
-        # if event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
         if event.button() == Qt.MouseButton.RightButton :
-            # Open input dialog to get new button title
             self.isChangeNameMode = True
             new_title, ok = QInputDialog.getText(
-                self, 
-                "Change Target Name", 
+                self,
+                "Change Target Name",
                 "Enter new name for the target:",
                 text=self.text()
             )
@@ -47,7 +43,6 @@ class TargetButton(QPushButton):
                 self.setText(new_title.strip())
                 self.name = new_title.strip()
         else:
-            # Call the original mousePressEvent for normal behavior
             self.isChangeNameMode = False
 
         super().mousePressEvent(event)
@@ -58,7 +53,6 @@ class RDoubleSpinBox(QDoubleSpinBox):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.valueChanged.connect(self.on_value_changed)
-
         self.lineEdit().returnPressed.connect(self.on_return_Pressed)
 
     def on_value_changed(self, value):
@@ -76,25 +70,17 @@ class RDoubleSpinBox(QDoubleSpinBox):
 
 
 #########################################################################################################
-#########################################################################################################
-#########################################################################################################
-#########################################################################################################
-class TargetWheelControl(QWidget):
+class TargetWheelControlSimple(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Target Wheel Control")
-        # self.setStyleSheet("background-color : #FFD7FB")
+        self.setWindowTitle("Target Wheel Control (Simple)")
         self.target_buttons = []
         self.target_chkBox = []
         self.target_pos = []
         self.target_rev = []
         self.target_names = [f"Target {i}" for i in range(16)]
-        self.fileName = None
 
-        self.button_clicked_id = None # which target button is clicked
-
-        self.influxToken = None
-        self.write_api = None
+        self.button_clicked_id = None
 
         self.controller = Controller()
 
@@ -104,28 +90,33 @@ class TargetWheelControl(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.Update_Position)
-        self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL  # milliseconds
+        self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL
 
         self.Connect_Server()
 
-        self.timer.start(self.updateTimeInterval) 
+        self.timer.start(self.updateTimeInterval)
         self.pauseUpdate = False
         self.askPosFromEncoder = True
 
         self.isQX4Locking = False
         self.isAllSweepEnabled = False
 
-        self.state = 0 # 0: idle, 1: spin, 2: sweep, 3: set target pos, 4: seek home
+        self.state = 0 # 0: idle, 2: sweep, 3: set target pos, 4: seek home
+
+        self.history_time = deque(maxlen=12000)
+        self.history_torque = deque(maxlen=12000)
+        self.history_motor_vel = deque(maxlen=12000)
+        self.history_enc_vel = deque(maxlen=12000)
+        self.history_temp = deque(maxlen=12000)
+        self.selectedTimeWindow = 60  # seconds
 
     def closeEvent(self, event: QCloseEvent):
-        if self.fileName and self.fileName != "":
-            self.save_targets_info()
         self.Save_program_settings()
         self.controller.send_message("SK")
         self.controller.send_message('IO7')
-        self.controller.send_message('RLO0') 
+        self.controller.send_message('RLO0')
         self.controller.disconnect()
-        event.accept()  # Optional: confirm you want to close
+        event.accept()
         print("============= Program Ended.")
 
     ######################################################################################## GUI
@@ -150,7 +141,7 @@ class TargetWheelControl(QWidget):
         for i in range(NTARGET):
             row += 1
             target_layout.addWidget(QLabel(str(i)), row, 0)
-            
+
             btn = TargetButton(self.target_names[i])
             btn.clicked.connect(lambda _, idx=i: self.Target_picked(idx))
             self.target_buttons.append(btn)
@@ -164,10 +155,9 @@ class TargetWheelControl(QWidget):
 
             le2 = QLineEdit(str(int(STEP_PER_REVOLUTION/NTARGET)*i/STEP_PER_REVOLUTION))
             le2.setReadOnly(True)
-            # le2.setEnabled(False)
             self.target_rev.append(le2)
             target_layout.addWidget(le2, row, 7, 1, 1)
-            
+
             chkBox = QCheckBox()
             chkBox.clicked.connect(lambda _, idx=i: self.Sweep_picked(idx))
             self.target_chkBox.append(chkBox)
@@ -185,7 +175,7 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(self.chkAll, row, 7, 1, 3)
         self.chkAll.clicked.connect(self.setAllSweepTargets)
 
-        # Lock Pos. 
+        # Set Position / Lock
         row += 1
         target_layout.addWidget(QLabel("Set Position : "), row, 1, 1, 3)
         self.qx4SetPos = QLineEdit("0")
@@ -197,50 +187,6 @@ class TargetWheelControl(QWidget):
         target_layout.addWidget(self.bnLockPos, row, 5, 1, 5)
         self.bnLockPos.clicked.connect(self.LockPosition)
 
-        row += 1
-        target_layout.addWidget(QLabel("Cntrl. update [100us] : "), row, 1, 1, 3)
-        self.qx4UpdateInterval = QLineEdit("1000")
-        self.qx4UpdateInterval.setFixedWidth(60)
-        self.qx4UpdateInterval.returnPressed.connect(self.SetQX4UpdateInterval)
-        target_layout.addWidget(self.qx4UpdateInterval, row, 4, 1, 1)
-
-        target_layout.addWidget(QLabel("Slew Speed [0.25 rpm] : "), row, 5)
-        self.qx4SlewSpeed = QLineEdit("40")
-        self.qx4SlewSpeed.returnPressed.connect(self.SetQX4SlewSpeed)
-        target_layout.addWidget(self.qx4SlewSpeed, row, 7, 1, 3)
-
-        row += 1
-        target_layout.addWidget(QLabel("Motor demand pos. : "), row, 1, 1, 3)
-        self.qx4MotorPos = QLineEdit("0")
-        self.qx4MotorPos.setFixedWidth(60)
-        self.qx4MotorPos.setReadOnly(True)
-        self.qx4MotorPos.setStyleSheet("background-color : lightgray")
-        target_layout.addWidget(self.qx4MotorPos, row, 4, 1, 1)        
-
-        target_layout.addWidget(QLabel("Servo speed [0.25 rpm] : "), row, 5)
-        self.qx4ServoSpeed = QLineEdit("20")
-        self.qx4ServoSpeed.returnPressed.connect(self.SetQX4ServoSpeed)
-        target_layout.addWidget(self.qx4ServoSpeed, row, 7, 1, 3)
-
-
-        #@===================== Add a vertical spacer to push following widgets down
-        # row += 1
-        # target_layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), row, 0, 1, 10)
-
-        # Load/Save Buttons
-        row += 1
-        load_button = QPushButton("Load Targets")
-        save_button = QPushButton("Save Targets")
-        load_button.clicked.connect(self.load_targets_click)
-        save_button.clicked.connect(self.save_targets_click)
-        target_layout.addWidget(load_button, row, 1, 1, 2)
-        target_layout.addWidget(save_button, row, 3, 1, 2)
-
-        # row += 1
-        self.fileNameLineEdit = QLineEdit("")
-        self.fileNameLineEdit.setReadOnly(True)
-        target_layout.addWidget(self.fileNameLineEdit, row, 5, 1, 5)
-
         #&########## Servers
         server_group = QGroupBox("Servers")
         server_layout = QGridLayout()
@@ -251,27 +197,13 @@ class TargetWheelControl(QWidget):
         self.bnConnect = QPushButton("Connect")
         self.bnConnect.clicked.connect(self.Connect_Server)
 
-        self.leinfluxAddress = QLineEdit()
-        self.leinfluxBucket = QLineEdit()
-        self.leinfluxOrg = QLineEdit()
-        self.leinfluxToken = QLineEdit()
-
         server_layout.addWidget(QLabel("IP :"), 0, 0)
         server_layout.addWidget(self.leIP, 0, 1, 1, 5)
         server_layout.addWidget(QLabel("Port :"), 1, 0)
         server_layout.addWidget(self.lePort, 1, 1, 1, 3)
         server_layout.addWidget(self.bnConnect, 1, 4, 1, 2)
 
-        server_layout.addWidget(QLabel("InfluxDB URL :"), 2, 0)
-        server_layout.addWidget(self.leinfluxAddress, 2, 1, 1, 5)
-        server_layout.addWidget(QLabel("Bucket :"), 3, 0)
-        server_layout.addWidget(self.leinfluxBucket, 3, 1, 1, 5)
-        server_layout.addWidget(QLabel("Org :"), 4, 0)
-        server_layout.addWidget(self.leinfluxOrg, 4, 1, 1, 5)
-        server_layout.addWidget(QLabel("Token File:"), 5, 0)
-        server_layout.addWidget(self.leinfluxToken, 5, 1, 1, 5)
-
-        #&########## Indicator for Sweeping
+        #&########## Indicator
         self.indicator = QPushButton("")
         self.indicator.setEnabled(False)
         self.indicator.setFixedHeight(120)
@@ -281,9 +213,6 @@ class TargetWheelControl(QWidget):
         status_layout = QGridLayout()
         self.status_group.setLayout(status_layout)
         status_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        # row = 0
-        # status_layout.addWidget(self.connectionStatus, row, 0, 1, 3)
 
         row = 0
         status_layout.addWidget(QLabel("Encoder Pos. : "), row, 0)
@@ -345,11 +274,6 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(self.bnSeekHome, row, 0, 1, 3)
         self.bnSeekHome.clicked.connect(self.SeekHome)
 
-        # row += 1
-        # self.bnZeroEncoderPosition = QPushButton("Zero Encoder Position")
-        # status_layout.addWidget(self.bnZeroEncoderPosition, row, 0, 1, 3)
-        # self.bnZeroEncoderPosition.clicked.connect(self.ZeroEncoderPosition)
-
         row += 1
         status_layout.addWidget(QLabel("Controller Temp. [C] : "), row, 0)
         self.statusTemp = QLineEdit()
@@ -375,7 +299,6 @@ class TargetWheelControl(QWidget):
         status_layout.addWidget(QLabel("Torque [step] : "), row, 0)
         self.statusTorque = QLineEdit()
         self.statusTorque.setReadOnly(True)
-
         self.statusTorque.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.statusTorque, row, 1, 1, 2)
 
@@ -391,73 +314,6 @@ class TargetWheelControl(QWidget):
         self.ioStatus.setStyleSheet("background-color : lightgray")
         status_layout.addWidget(self.ioStatus, row, 1, 1, 2)
 
-        #&########## manual command group
-        self.manual_group = QGroupBox("Manual Command")
-        manual_layout = QGridLayout()
-        self.manual_group.setLayout(manual_layout)
-        manual_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        row = 0
-        self.leSendMsg = QLineEdit()
-        self.leSendMsg.returnPressed.connect(self.Send_Message)
-        manual_layout.addWidget(QLabel("Send CMD : "), row, 0)
-        manual_layout.addWidget(self.leSendMsg, row, 1, 1, 2)
-
-        row += 1
-        self.leGetMsg = QLineEdit()
-        self.leGetMsg.setReadOnly(True)
-        manual_layout.addWidget(QLabel("Reply : "), row, 0)
-        manual_layout.addWidget(self.leGetMsg, row, 1, 1, 2)
-
-
-        #&########## Spinning Control Group
-        self.spin_group = QGroupBox("Spinning Control")
-        spin_layout = QGridLayout()
-        self.spin_group.setLayout(spin_layout)
-        spin_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        row = 0
-        self.spSpinSpeed = RDoubleSpinBox()
-        self.spSpinSpeed.setDecimals(2)
-        self.spSpinSpeed.setSingleStep(1.0)
-        self.spSpinSpeed.setRange(0.0042/60., 1300.0)
-        spin_layout.addWidget(QLabel("Spin Speed [rpm] : "), row, 0)
-        spin_layout.addWidget(self.spSpinSpeed, row, 1, 1, 2)
-        self.spSpinSpeed.returnPressed.connect(self.SetSpinSpeed)
-
-        # row += 1
-        # spin_layout.addWidget(QLabel("Spin speed [rpm]"), row, 0)
-        # self.statusSpinSpeed = QLineEdit()
-        # self.statusSpinSpeed.setReadOnly(True)
-        # self.statusSpinSpeed.setStyleSheet("background-color : lightgray")
-        # spin_layout.addWidget(self.statusSpinSpeed, row, 1, 1, 2)
-
-        row += 1
-        self.spSpinAccel = RDoubleSpinBox()
-        self.spSpinAccel.setDecimals(3)
-        self.spSpinAccel.setSingleStep(0.1)
-        self.spSpinAccel.setRange(0.167, 1000.0)
-        spin_layout.addWidget(QLabel("Spin Accel. [r/s^2] : "), row, 0)
-        spin_layout.addWidget(self.spSpinAccel, row, 1, 1, 2)
-        self.spSpinAccel.returnPressed.connect(self.SetSpinAccel)
-
-        row += 1
-        self.cbDirection = QComboBox()
-        self.cbDirection.addItems(["Clockwise (+)", "Counterclockwise (-)"])
-        spin_layout.addWidget(QLabel("Direction : "), row, 0)
-        spin_layout.addWidget(self.cbDirection, row, 1, 1, 2)
-
-        row += 1
-        self.bnSpinStart = QPushButton("Start Spin")
-        spin_layout.addWidget(self.bnSpinStart, row, 0, 1, 3)
-        self.bnSpinStart.clicked.connect(self.StartSpin)
-
-        row += 1
-        self.bnSpinStop = QPushButton("Stop Spin")
-        spin_layout.addWidget(self.bnSpinStop, row, 0, 1, 3)
-        self.bnSpinStop.clicked.connect(self.StopSpin)
-        self.bnSpinStop.setEnabled(False)
- 
         #&########## Sweeper Control Group
         self.sweep_group = QGroupBox("Veto Sweeper Control")
         sweep_layout = QGridLayout()
@@ -481,7 +337,7 @@ class TargetWheelControl(QWidget):
         self.spSpokeOffset.returnPressed.connect(self.SetSpokeOffset)
         sweep_layout.addWidget(QLabel("Spoke offset : "), row, 0)
         sweep_layout.addWidget(self.spSpokeOffset, row, 1, 1, 1)
- 
+
         row += 1
         self.spSweepSpeed = RDoubleSpinBox()
         self.spSweepSpeed.setDecimals(2)
@@ -497,7 +353,7 @@ class TargetWheelControl(QWidget):
         self.statusSweepSpeed.setReadOnly(True)
         self.statusSweepSpeed.setStyleSheet("background-color : lightgray")
         sweep_layout.addWidget(self.statusSweepSpeed, row, 1, 1, 1)
- 
+
         row += 1
         self.spSweepCutOff = RDoubleSpinBox()
         self.spSweepCutOff.setDecimals(2)
@@ -506,14 +362,12 @@ class TargetWheelControl(QWidget):
         self.spSweepCutOff.returnPressed.connect(self.SetSweepCutOff)
         sweep_layout.addWidget(QLabel("Cut Off [rpm] : "), row, 0)
         sweep_layout.addWidget(self.spSweepCutOff, row, 1, 1, 1)
- 
+
         row += 1
         self.direction_label = QLabel("Only Positive Direction")
-        # direction_label.setStyleSheet("color: blue; font-weight: bold;")
         self.direction_label.setStyleSheet("color: blue;")
         self.direction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sweep_layout.addWidget(self.direction_label, row, 0, 1, 2)
-
 
         row += 1
         self.sweepStart = QPushButton("Start sweep and spin")
@@ -526,82 +380,51 @@ class TargetWheelControl(QWidget):
         self.sweepStop.clicked.connect(self.StopSweep)
         sweep_layout.addWidget(self.sweepStop, row, 0, 1, 2)
 
+        #&########## Plot Group
+        plot_group = QGroupBox("History Plot")
+        plot_layout = QGridLayout()
+        plot_group.setLayout(plot_layout)
 
-        ########### Filter Settings group
-        filter_group = QGroupBox("Stepper Filter")
-        filter_layout = QGridLayout()
-        filter_group.setLayout(filter_layout)
-        filter_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        btn_layout = QHBoxLayout()
+        self.timeWindowButtons = []
+        for label, seconds in [("1 min", 60), ("5 min", 300), ("10 min", 600), ("30 min", 1800), ("1 hour", 3600)]:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _, s=seconds: self.SelectTimeWindow(s))
+            self.timeWindowButtons.append(btn)
+            btn_layout.addWidget(btn)
+        self.timeWindowButtons[0].setChecked(True)
+        self.timeWindowButtons[0].setStyleSheet("background-color: green")
 
-        row = 0
-        filter_layout.addWidget(QLabel("Anti-res Freq [Hz] : "), row, 0)
-        self.spAntiResFreq = RDoubleSpinBox()
-        self.spAntiResFreq.setDecimals(0)
-        self.spAntiResFreq.setSingleStep(1)
-        self.spAntiResFreq.setRange(1, 2000)
-        self.spAntiResFreq.returnPressed.connect(self.SetAntiResFreq)
-        filter_layout.addWidget(self.spAntiResFreq, row, 1)
+        plot_layout.addLayout(btn_layout, 0, 0)
 
-        row += 1
-        filter_layout.addWidget(QLabel("Anti-res Gain : "), row, 0)
-        self.spAntiResGain = RDoubleSpinBox()
-        self.spAntiResGain.setDecimals(0)
-        self.spAntiResGain.setSingleStep(100)
-        self.spAntiResGain.setRange(0, 32767)
-        self.spAntiResGain.returnPressed.connect(self.SetAntiResGain)
-        filter_layout.addWidget(self.spAntiResGain, row, 1)
+        self.figure = Figure(figsize=(10, 3))
+        self.canvas = FigureCanvas(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        self.ax2 = self.ax.twinx()
+        self.figure.tight_layout(pad=2.0)
 
-        row += 1
-        filter_layout.addWidget(QLabel("4th Harm Gain : "), row, 0)
-        self.spHarmonicGain = RDoubleSpinBox()
-        self.spHarmonicGain.setDecimals(0)
-        self.spHarmonicGain.setSingleStep(100)
-        self.spHarmonicGain.setRange(0, 32767)
-        self.spHarmonicGain.returnPressed.connect(self.SetHarmonicGain)
-        filter_layout.addWidget(self.spHarmonicGain, row, 1)
-
-        row += 1
-        filter_layout.addWidget(QLabel("4th Harm Phase : "), row, 0)
-        self.spHarmonicPhase = RDoubleSpinBox()
-        self.spHarmonicPhase.setDecimals(0)
-        self.spHarmonicPhase.setSingleStep(1)
-        self.spHarmonicPhase.setRange(-125, 125)
-        self.spHarmonicPhase.returnPressed.connect(self.SetHarmonicPhase)
-        filter_layout.addWidget(self.spHarmonicPhase, row, 1)
-
-        row += 1
-        filter_layout.addWidget(QLabel("Step Filter [Hz] : "), row, 0)
-        self.spStepFilterFreq = RDoubleSpinBox()
-        self.spStepFilterFreq.setDecimals(0)
-        self.spStepFilterFreq.setSingleStep(1)
-        self.spStepFilterFreq.setRange(0, 2500)
-        self.spStepFilterFreq.returnPressed.connect(self.SetStepFilterFreq)
-        filter_layout.addWidget(self.spStepFilterFreq, row, 1)
+        plot_layout.addWidget(self.canvas, 1, 0)
 
         ################################# Add groups to main layout
-        main_layout.addWidget(          target_group, 0, 0, 12, 2)
+        main_layout.addWidget(          target_group, 0, 0, 10, 2)
 
-        main_layout.addWidget(          server_group, 0, 2, 4, 1)
-        main_layout.addWidget(       self.spin_group, 4, 2, 3, 1)
-        main_layout.addWidget(      self.sweep_group, 7, 2, 5, 1)
+        main_layout.addWidget(          server_group, 0, 2, 2, 1)
+        main_layout.addWidget(      self.sweep_group, 2, 2, 8, 1)
 
         main_layout.addWidget(     self.status_group,  0, 3, 8, 1)
-        main_layout.addWidget(     self.manual_group,  8, 3, 2, 1)
-        main_layout.addWidget(        self.indicator, 10, 3, 2, 1)
+        main_layout.addWidget(        self.indicator,  8, 3, 2, 1)
 
-        main_layout.addWidget(         filter_group,  0, 4, 6, 1)
+        main_layout.addWidget(            plot_group, 10, 0, 4, 4)
 
         self.setLayout(main_layout)
 
 
     ################################################################################################################
-    ################################################################################################################
-    ################################################################################################################
     def Load_program_setting(self):
         if not os.path.exists("programSettings.json"):
             print("programSettings.json not found, creating default.")
-            default = [{"IP": "192.168.0.1", "Port": 7776, "target_file": "",
-                        "url": "http://localhost:8086", "bucket": "", "org": "", "token_file": ""}]
+            default = [{"IP": "192.168.0.1", "Port": 7776}]
             with open("programSettings.json", "w") as file:
                 json.dump(default, file, indent=2)
 
@@ -615,61 +438,21 @@ class TargetWheelControl(QWidget):
         self.leIP.setText(data.get("IP", "192.168.0.1"))
         self.lePort.setText(str(data.get("Port", 7776)))
 
-        self.fileName = data.get("target_file", "")
-        self.fileNameLineEdit.setText(self.fileName)
-        self.load_targets_info()
-
-        self.leinfluxAddress.setText(data.get("url", "http://localhost:8086"))
-        self.leinfluxBucket.setText(data.get("bucket", ""))
-        self.leinfluxOrg.setText(data.get("org", ""))
-        self.leinfluxToken.setText(data.get("token_file", ""))
-
-        token_file = data.get("token_file", "")
-        if token_file:
-            try:
-                with open(token_file, "r") as tf:
-                    self.influxToken = tf.read().strip()
-                    print(f"Loaded InfluxDB token from '{token_file}'.")
-            except Exception as e:
-                print(f"Could not read token file '{token_file}': {e}")
-                self.influxToken = None
-                self.leinfluxToken.setText("Fail to load token file.")
-        else:
-            self.influxToken = None
-            self.leinfluxToken.setText("No token file specified.")
-
-        if self.influxToken is not None:
-            self.write_client = InfluxDBClient(
-                url=self.leinfluxAddress.text(),
-                org=self.leinfluxOrg.text(),
-                token=self.influxToken)
-            self.write_api = self.write_client.write_api(write_options=SYNCHRONOUS)
-
-            try:
-                # quick write test to verify connectivity and bucket/org access
-                test_point = Point("connection_test").field("value", 1)
-                self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=test_point)
-                print("InfluxDB: connection and write test succeeded.")
-            except Exception as e:
-                print(f"InfluxDB: connection or write test failed: {e}")
-                self.write_api = None
-
     def Save_program_settings(self):
         print(f"Save program settings to programSettings.json")
+        try:
+            with open("programSettings.json", "r") as file:
+                data = json.load(file)[0]
+        except (FileNotFoundError, json.JSONDecodeError, IndexError):
+            data = {}
         try:
             port = int(self.lePort.text())
         except ValueError:
             port = 7776
-        data = [{"IP": self.leIP.text(),
-                 "Port": port,
-                 "target_file" : self.fileName if self.fileName else "",
-                 "url": self.leinfluxAddress.text(),
-                 "bucket": self.leinfluxBucket.text(),
-                 "org": self.leinfluxOrg.text(),
-                 "token_file": self.leinfluxToken.text() if self.influxToken else ""
-                }]
+        data["IP"] = self.leIP.text()
+        data["Port"] = port
         with open("programSettings.json", "w") as file:
-            json.dump(data, file, indent=2)
+            json.dump([data], file, indent=2)
 
     def Connect_Server(self):
         ip = self.leIP.text().strip()
@@ -683,9 +466,9 @@ class TargetWheelControl(QWidget):
             print(f"Invalid port: '{port_text}'")
             return
         self.controller.Connect(ip, port)
-        self.enableSignals = False  # Disable signals-slots during connection
+        self.enableSignals = False
         self.Display_Status()
-        self.enableSignals = True  # Enable signals-slots after connection
+        self.enableSignals = True
 
     #========================================================================================
     def SetEnableGeneralControl(self, enable):
@@ -693,16 +476,7 @@ class TargetWheelControl(QWidget):
         self.spDeccel.setEnabled(enable)
         self.spSpeed.setEnabled(enable)
         self.bnSeekHome.setEnabled(enable)
-        # self.bnZeroEncoderPosition.setEnabled(enable)
         self.bnUpdateState.setEnabled(enable)
-
-    def setEnableSpinControl(self, enable, myself = False):
-        self.spSpinSpeed.setEnabled(enable)
-        self.spSpinAccel.setEnabled(enable)
-        self.cbDirection.setEnabled(enable)
-        self.bnSpinStart.setEnabled(enable)
-        if myself:
-            self.bnSpinStop.setEnabled(not enable)
 
     def setEnableSweepControl(self, enable, myself = False):
         self.sweepStart.setEnabled(enable)
@@ -718,16 +492,9 @@ class TargetWheelControl(QWidget):
         for i in range(NTARGET):
             self.target_buttons[i].setEnabled(enable)
             self.target_pos[i].setEnabled(enable)
-        
+
         self.bnLockPos.setEnabled(enable)
         self.qx4SetPos.setEnabled(enable)
-        self.qx4UpdateInterval.setEnabled(enable)
-        self.qx4SlewSpeed.setEnabled(enable)
-        self.qx4ServoSpeed.setEnabled(enable)
-        # if all:
-        #     self.chkAll.setEnabled(enable)
-        #     for i in range(NTARGET):
-        #         self.target_chkBox[i].setEnabled(enable)
 
     #========================================================================================
     def Update_Status(self):
@@ -743,9 +510,8 @@ class TargetWheelControl(QWidget):
 
             print(f"Position: {self.controller.position}, Accel: {self.controller.accelRate}, ")
             print(f"Deaccel: {self.controller.deaccelRate}, Speed: {self.controller.velocity}, " +
-                  f"Move Distance: {self.controller.moveDistance}, Jog Speed: {self.controller.jogSpeed}, " +
-                  f"Jog Accel: {self.controller.jogAccel}, Sweep Mask: {bin(self.controller.sweepMask)}")
-            print(f"Sweep Offset: {self.controller.spokeOffset}, Spoke Width: {self.controller.spokeWidth}, " +  
+                  f"Sweep Mask: {bin(self.controller.sweepMask)}")
+            print(f"Sweep Offset: {self.controller.spokeOffset}, Spoke Width: {self.controller.spokeWidth}, " +
                    f"Sweep Speed: {self.controller.sweepSpeed}, Sweep Cut Off: {self.controller.sweepCutOff}")
 
             self.EncoderPos.setText(f"{self.controller.position}")
@@ -756,21 +522,6 @@ class TargetWheelControl(QWidget):
             self.spSpeed.setValue(self.controller.velocity)
             self.statusSpeed.setText(f"{self.controller.velocity*60:.1f}")
 
-            self.spAntiResFreq.setValue(self.controller.antiResFreq)
-            self.spAntiResGain.setValue(self.controller.antiResGain)
-            self.spHarmonicGain.setValue(self.controller.harmonicGain)
-            self.spHarmonicPhase.setValue(self.controller.harmonicPhase)
-            self.spStepFilterFreq.setValue(self.controller.stepFilterFreq)
-
-            self.spSpinSpeed.setValue(self.controller.jogSpeed*60.)
-            # self.statusSpinSpeed.setText(f"{self.controller.jogSpeed*60:.1f}")
-            self.spSpinAccel.setValue(self.controller.jogAccel)
-            if self.controller.moveDistance >= 0 :
-                self.cbDirection.setCurrentIndex(0)  # Clockwise
-            else:
-                self.cbDirection.setCurrentIndex(1)
-
-            #=== check current position and set the corresponding 
             self.UpdateButtonsColor()
 
             #==== sweep parameters
@@ -798,7 +549,7 @@ class TargetWheelControl(QWidget):
             self.statusEncVel.setText(f"{self.controller.encoderVelocity:.2f}")
             self.statusMotVel.setText(f"{self.controller.motorVelocity:.2f}")
             self.statusTorque.setText(f"{self.controller.torque:.2f}")
-            
+
             #=== QX4
             self.UpdateQX4ParametersFromMemory()
 
@@ -808,29 +559,23 @@ class TargetWheelControl(QWidget):
             #=== FW program status
             fw_status = self.controller.FWprogram
 
-            if fw_status > 0 and fw_status < 4: # QX1 is running, i.e. the sweeping is on
+            if fw_status > 0 and fw_status < 4:
                 print("QX1 sweeping is running.")
                 self.SetEnableGeneralControl(False)
-                self.setEnableSpinControl(False)
                 self.setEnableSweepControl(False, True)
                 self.setEnableTargetControl(False)
 
-                
-                self.updateTimeInterval = 300  # milliseconds
+                self.updateTimeInterval = 300
                 self.timer.stop()
                 self.timer.start(self.updateTimeInterval)
 
-            if fw_status == 4: # QX4 is running, i.e. the position locking is on
+            if fw_status == 4:
                 print("QX4 position locking is running. kill it.")
                 self.controller.stopQX4LockPosition()
 
     def UpdateQX4ParametersFromMemory(self):
         if self.controller.connected and self.controller.isQX4Updated:
             self.qx4SetPos.setText(f"{self.controller.qx4EncoderDemandPos}")
-            self.qx4UpdateInterval.setText(f"{self.controller.qx4ControUpdate}")
-            self.qx4SlewSpeed.setText(f"{self.controller.qx4SlewSpeed}")
-            self.qx4ServoSpeed.setText(f"{self.controller.qx4ServoSlewSpeed}")
-            self.qx4MotorPos.setText(f"{self.controller.qx4MotorDemandPos}")
             self.controller.isQX4Updated = False
 
     def UpdateOtherStatus(self):
@@ -845,26 +590,25 @@ class TargetWheelControl(QWidget):
             self.statusMotVel.setText(f"{self.controller.motorVelocity:.3f}")
             self.statusTorque.setText(f"{self.controller.torque:.2f}")
 
-    def UpdateButtonsColor(self, tolerance = 10): # step
-        current_pos = self.controller.position #absolute position
-        # print(f"Current absolute position: {current_pos}, mod: {current_pos%STEP_PER_REVOLUTION:.0f}")
-        
+    def UpdateButtonsColor(self, tolerance = 10):
+        current_pos = self.controller.position
+
         target_Boundary_width = STEP_PER_REVOLUTION/NTARGET
-        
+
         for i, pos in enumerate(self.target_pos):
             target_pos = int(pos.text())
             target_pos = self.controller.ConvertModPositionToAbsolute(target_pos)
 
             if abs(current_pos - target_pos) < target_Boundary_width/2:
-                self.target_buttons[i].setStyleSheet("background-color: yellow") 
+                self.target_buttons[i].setStyleSheet("background-color: yellow")
             else:
                 self.target_buttons[i].setStyleSheet("")
 
             if abs(current_pos - target_pos) <= tolerance:
-                self.target_buttons[i].setStyleSheet("background-color: green") 
+                self.target_buttons[i].setStyleSheet("background-color: green")
                 self.button_clicked_id = i
 
-    def Update_Position(self): # see self.updateTimeInterval
+    def Update_Position(self):
         if not self.controller.connected:
             self.indicator.setStyleSheet("background-color: red")
             return
@@ -873,46 +617,33 @@ class TargetWheelControl(QWidget):
             if self.askPosFromEncoder:
                 self.controller.getPosition(False)
                 self.controller.getIOStatus()
-            self.EncoderPos.setText(f"{self.controller.position}") 
+            self.EncoderPos.setText(f"{self.controller.position}")
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
 
             self.ioStatus.setText(bin(int(self.controller.io_status)))
 
             self.UpdateOtherStatus()
-            #if ModPos is close to a target, change the button color
             self.UpdateButtonsColor()
-            # self.UpdateStateButtons()
 
-            if self.write_api is not None:
-                points = []
-                points.append(Point("Torque").field("value", self.controller.torque))
-                self.write_api.write(bucket=self.leinfluxBucket.text(), org=self.leinfluxOrg.text(), record=points)
+            self.history_time.append(time.time())
+            self.history_torque.append(self.controller.torque)
+            self.history_motor_vel.append(self.controller.motorVelocity)
+            self.history_enc_vel.append(self.controller.encoderVelocity)
+            self.history_temp.append(self.controller.temperature)
 
-            ## checking sweeping, green indicator when sweeping at set speed, yello when spinning up or down, blue is standby (not sweeping)
-            ## by comparing the encoder velocity and the set sweeping speed
-            # print(f"Current state: {self.state}")
-            if self.state == 2: # QX1 is running, i.e. the sweeping is on
+            if self.state == 2:
                 enc_vel = self.controller.motorVelocity
                 sweep_speed_rps = self.controller.sweepSpeed
-                # print(f"Sweeping: enc_vel = {enc_vel:.2f} rpm, sweep_speed_rps = {sweep_speed_rps:.2f} rpm")
                 if abs(enc_vel - sweep_speed_rps) < 0.1 * sweep_speed_rps:
-                    self.indicator.setStyleSheet("background-color: green")  # Sweeping at set speed
+                    self.indicator.setStyleSheet("background-color: green")
                 else:
-                    self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
-            elif self.state == 1: 
-                # when it is spinging, also compare the spinning speed with the encoder velocity
-                spin_speed_rps = self.spSpinSpeed.value()
-                # print(f"Spinning: enc_vel = {self.controller.motorVelocity:.2f} rpm, spin_speed_rps = {spin_speed_rps:.2f} rpm")
-                diff = abs(self.controller.motorVelocity - spin_speed_rps)
-                if diff < 0.1 * spin_speed_rps and spin_speed_rps > 0:
-                    self.indicator.setStyleSheet("background-color: green")  # Spinning at set speed
-                else:
-                    self.indicator.setStyleSheet("background-color: yellow")  # Spinning up or down
+                    self.indicator.setStyleSheet("background-color: yellow")
             else:
-                self.indicator.setStyleSheet("background-color: blue")  # QX4 locking
+                self.indicator.setStyleSheet("background-color: blue")
 
-            QApplication.processEvents()  # Process events to update the UI
+            self.UpdatePlot()
+            QApplication.processEvents()
 
     #======================================================================================== General Control
     def SetAccel(self):
@@ -920,7 +651,7 @@ class TargetWheelControl(QWidget):
             accel = self.spAccel.value()
             self.controller.setAccelRate(accel)
             print(f"Acceleration set to {accel:.3f} [r/s^2]")
-    
+
     def SetSpeed(self):
         if self.enableSignals:
             speed = self.spSpeed.value()
@@ -933,36 +664,6 @@ class TargetWheelControl(QWidget):
             deaccel = self.spDeccel.value()
             self.controller.setDeaccelRate(deaccel)
             print(f"Deacceleration set to {deaccel:.3f} [r/s^2]")
-
-    def SetAntiResFreq(self):
-        if self.enableSignals:
-            val = int(self.spAntiResFreq.value())
-            self.controller.setAntiResFreq(val)
-            print(f"Anti-resonance filter frequency set to {val} Hz")
-
-    def SetAntiResGain(self):
-        if self.enableSignals:
-            val = int(self.spAntiResGain.value())
-            self.controller.setAntiResGain(val)
-            print(f"Anti-resonance filter gain set to {val}")
-
-    def SetHarmonicGain(self):
-        if self.enableSignals:
-            val = int(self.spHarmonicGain.value())
-            self.controller.setHarmonicGain(val)
-            print(f"4th harmonic filter gain set to {val}")
-
-    def SetHarmonicPhase(self):
-        if self.enableSignals:
-            val = int(self.spHarmonicPhase.value())
-            self.controller.setHarmonicPhase(val)
-            print(f"4th harmonic filter phase set to {val}")
-
-    def SetStepFilterFreq(self):
-        if self.enableSignals:
-            val = int(self.spStepFilterFreq.value())
-            self.controller.setStepFilterFreq(val)
-            print(f"Step filter frequency set to {val} Hz")
 
     def _updatePositionDisplay(self):
         self.EncoderPos.setText(f"{self.controller.position}")
@@ -1029,7 +730,6 @@ class TargetWheelControl(QWidget):
     def SeekHome(self):
         if self.controller.connected:
             self.SetEnableGeneralControl(False)
-            self.setEnableSpinControl(False)
             self.setEnableSweepControl(False)
             self.state = 4
             self.controller.seekHome()
@@ -1038,41 +738,29 @@ class TargetWheelControl(QWidget):
     def _onSeekHomeComplete(self):
         self.state = 0
         self.SetEnableGeneralControl(True)
-        self.setEnableSpinControl(True)
         self.setEnableSweepControl(True)
-            
-            
+
     def ZeroEncoderPosition(self):
         if self.controller.connected:
             print("Resetting encoder position to 0...")
-            self.controller.setEncoderPosition(0)  # Set the encoder position to 0
-            time.sleep(0.1)  
+            self.controller.setEncoderPosition(0)
+            time.sleep(0.1)
             self.controller.getPosition()
-            self.EncoderPos.setText(f"{self.controller.position}") 
+            self.EncoderPos.setText(f"{self.controller.position}")
             self.EncoderModPos.setText(f"{self.controller.position%STEP_PER_REVOLUTION:.0f}")
             self.EncoderRev.setText(f"{self.controller.position/STEP_PER_REVOLUTION:.2f} [rev]")
-            QApplication.processEvents()  # Process events to update the UI
-
-
-    def Send_Message(self):
-        self.timer.stop()  # Stop the timer to prevent updates during message sending
-        self.leGetMsg.setText(self.controller.send_message(self.leSendMsg.text()))
-        self.leSendMsg.selectAll()
-        time.sleep(0.1)  # Wait a bit to ensure the command is processed
-        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
+            QApplication.processEvents()
 
     #======================================================================================== Target Control
     def Target_picked(self, id):
         if self.target_buttons[id].isChangeNameMode:
             self.target_names[id] = self.target_buttons[id].name
             print(f"Change Target Name: {self.target_names[id]}, id : {id}")
-            QApplication.processEvents()  # Process events to update the UI
+            QApplication.processEvents()
             return
 
-        # Remove focus from all buttons after click
         QApplication.focusWidget().clearFocus()
 
-        #=== change color
         if  self.button_clicked_id != id:
             self.target_buttons[id].setStyleSheet("background-color: green")
             if self.button_clicked_id is not None:
@@ -1082,17 +770,16 @@ class TargetWheelControl(QWidget):
 
         target_position = int(self.target_pos[id].text())
         self.message.setText(f"Moving to target position {target_position}.")
-        
+
         if self.isQX4Locking :
             self.qx4SetPos.setText(f"{target_position}")
             self.controller.setQX4EncoderDemandPos(target_position)
 
-        else: #start QX4 locking
+        else:
             self.bnLockPos.click()
-            time.sleep(1.0)  # Wait a bit to ensure the command is processed
+            time.sleep(1.0)
             self.qx4SetPos.setText(f"{target_position}")
             self.controller.setQX4EncoderDemandPos(target_position)
-
 
     def SetPosition(self, id):
         try:
@@ -1117,15 +804,15 @@ class TargetWheelControl(QWidget):
             self.controller.setQX4EncoderDemandPos(int(pos))
 
     def Sweep_picked(self, id):
-        self.timer.stop()  # Stop the timer to prevent updates during sweep selection
+        self.timer.stop()
         print("Old Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask ))
         bitPos = 15 - id
         if self.target_chkBox[id].isChecked():
             print(f"Sweep Target : {self.target_names[id]}, id : {id}")
-            self.controller.sweepMask |= (1 << bitPos)  # Set the bit for the target
+            self.controller.sweepMask |= (1 << bitPos)
         else:
             print(f"Uncheck Sweep Target : {self.target_names[id]}, id : {id}")
-            self.controller.sweepMask &= ~(1 << bitPos)  # Unset the bit for the target
+            self.controller.sweepMask &= ~(1 << bitPos)
 
         print("New Sweep Mask: %s | 0x%04X | %d" % (bin(self.controller.sweepMask), self.controller.sweepMask, self.controller.sweepMask))
 
@@ -1135,19 +822,19 @@ class TargetWheelControl(QWidget):
             self.chkAll.setText("Enable All")
 
         self.controller.setSweepMask(self.controller.sweepMask)
-        time.sleep(0.1)  # Wait a bit to ensure the command is processed
-        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
+        time.sleep(0.1)
+        self.timer.start(self.updateTimeInterval)
 
     def setAllSweepTargets(self):
         self.timer.stop()
-        self.enableSignals = False  # Disable signals-slots during sweep selection
+        self.enableSignals = False
         if not self.isAllSweepEnabled:
             self.isAllSweepEnabled = True
             self.chkAll.setStyleSheet("background-color: green")
             self.chkAll.setText("Disable All")
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(True)
-            tempMask = (1 << 16) - 1  # Set all bits to 1
+            tempMask = (1 << 16) - 1
             self.controller.setSweepMask(tempMask)
         else:
             self.isAllSweepEnabled = False
@@ -1157,10 +844,9 @@ class TargetWheelControl(QWidget):
             for i in range(NTARGET):
                 self.target_chkBox[i].setChecked(False)
             self.controller.setSweepMask(0)
-        self.enableSignals = True  # Enable signals-slots after sweep selection 
-        time.sleep(0.1)  # Wait a bit to ensure the command is processed
-        self.timer.start(self.updateTimeInterval)  # Restart the timer with the original interval
-
+        self.enableSignals = True
+        time.sleep(0.1)
+        self.timer.start(self.updateTimeInterval)
 
     def LockPosition(self):
         if self.controller.connected:
@@ -1171,14 +857,13 @@ class TargetWheelControl(QWidget):
 
                 self.controller.startQX4LockPosition()
 
-                time.sleep(0.5)  # Wait a bit to ensure the command is processed
+                time.sleep(0.5)
                 self.UpdateQX4ParametersFromMemory()
 
                 self.SetEnableGeneralControl(False)
-                self.setEnableSpinControl(False)
                 self.setEnableSweepControl(False)
 
-                self.state = 3  # set target position
+                self.state = 3
 
             else:
                 self.isQX4Locking = False
@@ -1188,24 +873,19 @@ class TargetWheelControl(QWidget):
                 self.UpdateQX4ParametersFromMemory()
 
                 self.SetEnableGeneralControl(True)
-                self.setEnableSpinControl(True)
                 self.setEnableSweepControl(True)
 
-                self.state = 0  # idle
+                self.state = 0
 
     #======================================================================================== Sweep Control
     def SetMaxSweepSpeed(self):
-        #cal the maximum speed allowed
-        maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)  
+        maxSpeed1 = 60. / 0.0536 * (1 - self.spSpokeWidth.value() / 512)
         maxSpeed2 = 60. / 0.0044 * (self.spSpokeWidth.value() / 512)
         maxSpeed = min(maxSpeed1, maxSpeed2)
-
-        # Make maxSpeed divisible by 0.25
         maxSpeed = math.floor(maxSpeed / 0.25) * 0.25
         self.spSweepSpeed.setMaximum(maxSpeed)
         self.spSweepSpeed.setStyleSheet("color: black;")
         print(f"Spoke Width set to {self.spSpokeWidth.value():.0f}, max sweep speed: {maxSpeed:.2f} rpm")
-
 
     def SetSpokeWidth(self):
         if self.enableSignals:
@@ -1227,7 +907,6 @@ class TargetWheelControl(QWidget):
             elif new_pos >= STEP_PER_REVOLUTION:
                 new_pos -= STEP_PER_REVOLUTION
             self.target_pos[i].setText(f"{int(new_pos)}")
-            # print(f"Target {i} position set to {int(new_pos)} steps.")
             self.target_rev[i].setText(f"{new_pos / STEP_PER_REVOLUTION:.3f}")
 
     def SetSweepSpeed(self):
@@ -1242,23 +921,15 @@ class TargetWheelControl(QWidget):
     def StartSweep(self):
         if self.controller.connected:
             self.SetEnableGeneralControl(False)
-            self.setEnableSpinControl(False)
             self.setEnableSweepControl(False, True)
             self.setEnableTargetControl(False)
 
-            self.state = 2  # Sweeping and Spinning
-
-            # if self.cbSweepDirection.currentIndex() == 0:
-            #     print("Starting sweep and spin in clockwise direction.")
-            #     self.controller.send_message("DI100")
-            # else:
-            #     print("Starting sweep and spin in counterclockwise direction.")
-            #     self.controller.send_message("DI-100")
+            self.state = 2
 
             self.controller.send_message("DI100")
             self.controller.startSpinSweep()
-        
-            self.updateTimeInterval = 300 
+
+            self.updateTimeInterval = 300
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
 
@@ -1270,7 +941,7 @@ class TargetWheelControl(QWidget):
             self.direction_label.setText("Stopping... Please wait")
             self.direction_label.setStyleSheet("color: red;")
 
-            self.timer.stop() 
+            self.timer.stop()
 
             while True:
                 old_velocity = self.controller.motorVelocity
@@ -1278,8 +949,8 @@ class TargetWheelControl(QWidget):
                 new_velocity = self.controller.motorVelocity
                 status = int(self.controller.io_status) & 0b111
                 print(f"Waiting for sweep to stop... IO status: {status:03b}")
-                    
-                if status  == 7:  # 00000111 in decimal
+
+                if status  == 7:
                     self.controller.isSpinning = False
                     break
 
@@ -1288,93 +959,27 @@ class TargetWheelControl(QWidget):
                     break
 
                 time.sleep(0.3)
-                QApplication.processEvents()  # Process events to update the UI
+                QApplication.processEvents()
 
-            self.controller.send_message("SK") 
+            self.controller.send_message("SK")
             self.controller.send_message('IO7')
-            self.controller.send_message('RLO0') 
-            #restore the original speed
+            self.controller.send_message('RLO0')
             self.controller.setSweepSpeed(origin_speed)
 
             self.direction_label.setStyleSheet("color: blue;")
             self.direction_label.setText("Only Positive Direction")
 
-            self.state = 0  # Idle
+            self.state = 0
 
             self.Update_Status()
 
             self.SetEnableGeneralControl(True)
-            self.setEnableSpinControl(True)
             self.setEnableSweepControl(True, True)
             self.setEnableTargetControl(True)
 
-            self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL 
+            self.updateTimeInterval = DEFAULT_POS_UPDATE_INTERVAL
             self.timer.stop()
             self.timer.start(self.updateTimeInterval)
-
-            self.UpdateButtonsColor()
-
-
-
-    #======================================================================================== Spin Control
-    def SetSpinSpeed(self):
-        if self.enableSignals:
-            speed = self.spSpinSpeed.value()
-            self.controller.setJogSpeed(speed/60.)
-            # self.statusSpinSpeed.setText(f"{speed*60:.1f}")
-            print(f"Spin Speed set to {speed:.2f} [rpm] = {speed/60.:.3f} [r/s]")
-
-    def SetSpinAccel(self):
-        if self.enableSignals:
-            accel = self.spSpinAccel.value()
-            self.controller.setJogAccel(accel)
-            print(f"Spin Acceleration set to {accel:.3f} [r/s^2]")
-
-    def StartSpin(self):
-        if self.controller.connected:
-
-            self.SetEnableGeneralControl(False)
-            self.setEnableSpinControl(False, True)
-            self.setEnableSweepControl(False)
-            self.setEnableTargetControl(False)
-
-            QApplication.focusWidget().clearFocus()
-
-            self.state = 1  # Spinning
-
-            self.updateTimeInterval = 300 
-            self.timer.stop()
-            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
-
-            # if self.cbDirection.currentIndex() == 0:
-            #    print("Starting spin in clockwise direction.")
-            #    self.controller.send_message("DI100")   
-            # else:
-            #     print("Starting spin in counterclockwise direction.")
-            #     self.controller.send_message("DI-100")
-
-            self.controller.send_message("DI100")   # ALWAYS POSITIVE NUMBER
-            self.controller.startSpin()
-
-            self.pauseUpdate = False            
-
-    def StopSpin(self):
-        if self.controller.connected:
-
-            self.state = 0  # Idle  
-            self.controller.stopSpin()
-            QApplication.focusWidget().clearFocus()
-
-            self.pauseUpdate = False
-
-            self.updateTimeInterval = 500 
-            self.timer.stop()
-            self.timer.start(self.updateTimeInterval)  # Restart the timer with the new interval
-
-            self.SetEnableGeneralControl(True)
-            self.setEnableSpinControl(True, True)
-            self.setEnableSweepControl(True)
-            self.setEnableTargetControl(True)
 
             self.UpdateButtonsColor()
 
@@ -1384,76 +989,61 @@ class TargetWheelControl(QWidget):
             pos = int(self.qx4SetPos.text())
             self.controller.setQX4EncoderDemandPos(pos)
 
-    def SetQX4UpdateInterval(self):
-        if self.enableSignals:
-            interval = int(self.qx4UpdateInterval.text())
-            self.controller.setQX4ControUpdate(interval)
+    #======================================================================================== Plot
+    def SelectTimeWindow(self, seconds):
+        self.selectedTimeWindow = seconds
+        for btn in self.timeWindowButtons:
+            btn.setChecked(False)
+            btn.setStyleSheet("")
+        sender = self.sender()
+        if sender:
+            sender.setChecked(True)
+            sender.setStyleSheet("background-color: green")
+        self.UpdatePlot()
 
-    def SetQX4SlewSpeed(self):
-        if self.enableSignals:
-            speed = int(self.qx4SlewSpeed.text())
-            self.controller.setQX4SlewSpeed(speed)
-
-    def SetQX4ServoSpeed(self):
-        if self.enableSignals:
-            speed = int(self.qx4ServoSpeed.text())
-            self.controller.setQX4ServoSlewSpeed(speed)
-
-    #======================================================================================== Load/Save Target Names
-    def load_targets_click(self):
-        self.fileName, _ = QFileDialog.getOpenFileName(self, "Open Target Names", "", "JSON Files (*.json)")
-        self.load_targets_info()
-
-    def save_targets_click(self):
-        self.fileName, _ = QFileDialog.getSaveFileName(self, "Save Target Names", "", "JSON Files (*.json)")
-        print(f"Save to file: |{self.fileName}|")
-        if self.fileName == "" or self.fileName is None:
-            print("No file name specified. Targets not saved.")
+    def UpdatePlot(self):
+        if len(self.history_time) < 2:
             return
-        self.save_targets_info()
 
-        self.fileNameLineEdit.setText(self.fileName)
-        self.Save_program_settings()
+        now = time.time()
+        cutoff = now - self.selectedTimeWindow
 
-        
-    def load_targets_info(self):
+        t = list(self.history_time)
+        start_idx = 0
+        for i, ts in enumerate(t):
+            if ts >= cutoff:
+                start_idx = i
+                break
 
-        print(f"Load from file: |{self.fileName}|")
+        times = [t[i] - now for i in range(start_idx, len(t))]
+        torque = list(self.history_torque)[start_idx:]
+        motor_vel = list(self.history_motor_vel)[start_idx:]
+        enc_vel = list(self.history_enc_vel)[start_idx:]
+        temp = list(self.history_temp)[start_idx:]
 
-        if self.fileName is not None and self.fileName != "":
-            try:
-                with open(self.fileName, "r") as file:
-                    data = json.load(file)
-                    if isinstance(data, list):
-                        for item in data:
-                            idx = item.get("index")
-                            name = item.get("name")
-                            pos = str(item.get("position"))
-                            if isinstance(idx, int) and 0 <= idx < len(self.target_buttons):
-                                self.target_buttons[idx].setText(name)
-                                self.target_pos[idx].setText(pos)
-            except (FileNotFoundError, json.JSONDecodeError) as e:
-                print(f"Error loading targets position: {e}")
-                self.fileName = None
-                self.fileNameLineEdit.setText("")
-                return
-        else:
-            self.fileName = None
-            self.fileNameLineEdit.setText("")
+        self.ax.clear()
+        self.ax2.clear()
 
-        self.fileNameLineEdit.setText(self.fileName)
+        self.ax.plot(times, torque, 'r-', label='Torque [step]', linewidth=0.8)
+        self.ax.plot(times, motor_vel, 'b-', label='Motor Vel [rpm]', linewidth=0.8)
+        self.ax.plot(times, enc_vel, 'g-', label='Encoder Vel [rpm]', linewidth=0.8)
+        self.ax2.plot(times, temp, color='gray', linestyle='-', label='Temp [°C]', linewidth=0.8)
 
-    def save_targets_info(self):
-        if  self.fileName is not None and self.fileName != "":
-            data = [{"index": i, "name": btn.text(), "position" : int(self.target_pos[i].text())} for i, btn in enumerate(self.target_buttons)]
-            with open(self.fileName, "w") as file:
-                json.dump(data, file, indent=2)
+        self.ax.set_xlabel("Time [s]")
+        self.ax.set_ylabel("Torque / Velocity")
+        self.ax2.set_ylabel("Temperature [°C]")
 
-            print(f"Targets name and position saved to {self.fileName}")
+        lines1, labels1 = self.ax.get_legend_handles_labels()
+        lines2, labels2 = self.ax2.get_legend_handles_labels()
+        self.ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=7)
+
+        self.ax.grid(True, alpha=0.3)
+        self.figure.tight_layout(pad=1.5)
+        self.canvas.draw_idle()
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = TargetWheelControl()
+    window = TargetWheelControlSimple()
     window.show()
     sys.exit(app.exec())
